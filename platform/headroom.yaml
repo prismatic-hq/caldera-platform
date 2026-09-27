@@ -5,7 +5,7 @@ metadata:
   namespace: caldera-system
   labels:
     app.kubernetes.io/name: headroom
-    app.kubernetes.io/part-of: vent-headroom
+    app.kubernetes.io/part-of: preview-headroom
 spec:
   replicas: 2
   selector:
@@ -15,13 +15,13 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: headroom
-        app.kubernetes.io/part-of: vent-headroom
+        app.kubernetes.io/part-of: preview-headroom
     spec:
-      priorityClassName: vent-headroom
+      priorityClassName: preview-headroom
       terminationGracePeriodSeconds: 0
       automountServiceAccountToken: false
       nodeSelector:
-        karpenter.sh/nodepool: vents
+        karpenter.sh/nodepool: preview-environments
       securityContext:
         runAsNonRoot: true
         runAsUser: 65535

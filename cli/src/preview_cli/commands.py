@@ -34,7 +34,7 @@ def up_commands(
     target: Target,
 ) -> list[Command]:
     namespace = plan.release
-    strings = [f"vent.name={plan.environment}", f"datasetVersion={dataset_version}"]
+    strings = [f"environment.name={plan.environment}", f"datasetVersion={dataset_version}"]
     numbers = []
     for service in services:
         strings += [

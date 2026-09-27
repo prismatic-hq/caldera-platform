@@ -1,29 +1,29 @@
-suite: vent name validation
+suite: preview environment name validation
 values:
   - ../ci/default-values.yaml
 templates:
   - templates/services.yaml
 tests:
-  - it: fails when the vent name is missing
+  - it: fails when the preview environment name is missing
     set:
-      vent.name: ""
+      environment.name: ""
     asserts:
       - failedTemplate:
-          errorPattern: vent.name is required
-  - it: fails on a vent name that is not a DNS label
+          errorPattern: environment.name is required
+  - it: fails on a preview environment name that is not a DNS label
     set:
-      vent.name: Quake_Alerts
+      environment.name: Quake_Alerts
     asserts:
       - failedTemplate:
-          errorPattern: invalid vent name "Quake_Alerts"
+          errorPattern: invalid preview environment name "Quake_Alerts"
   - it: fails when a service hostname label exceeds 63 characters
     set:
-      vent.name: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      environment.name: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     asserts:
       - failedTemplate:
-          errorPattern: vent label too long
+          errorPattern: hostname label too long
   - it: accepts the longest name that fits every label
     set:
-      vent.name: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      environment.name: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     asserts:
       - notFailedTemplate: {}

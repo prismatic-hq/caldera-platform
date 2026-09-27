@@ -1,4 +1,4 @@
-vent:
+environment:
   name: ci
 services:
   tremor:

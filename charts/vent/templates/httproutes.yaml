@@ -1,4 +1,4 @@
-{{- $vent := include "preview.name" . }}
+{{- $environment := include "preview.name" . }}
 {{- range $name, $overrides := .Values.services }}
 {{- $service := mustMergeOverwrite (deepCopy $.Values.serviceDefaults) $overrides }}
 ---
@@ -19,7 +19,7 @@ spec:
       namespace: {{ $.Values.gateway.namespace }}
       sectionName: {{ $.Values.gateway.sectionName }}
   hostnames:
-    - {{ printf "%s-%s.%s" $name $vent $.Values.domain | quote }}
+    - {{ printf "%s-%s.%s" $name $environment $.Values.domain | quote }}
   rules:
     - backendRefs:
         - name: {{ $name }}

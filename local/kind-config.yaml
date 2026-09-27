@@ -8,4 +8,4 @@ nodes:
   - role: control-plane
   - role: worker
     labels:
-      karpenter.sh/nodepool: vents
+      karpenter.sh/nodepool: preview-environments
