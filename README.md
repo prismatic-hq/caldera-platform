@@ -9,7 +9,7 @@ Related repos:
 - [steward-api](https://github.com/prismatic-hq/steward-api): sites, crews and work orders
 
 Docs: [REQUIREMENTS.md](docs/REQUIREMENTS.md), [ARCHITECTURE.md](docs/ARCHITECTURE.md),
-[GITHUB_APP.md](docs/GITHUB_APP.md).
+[GITHUB_APP.md](docs/GITHUB_APP.md), [CLUSTER_ACCESS.md](docs/CLUSTER_ACCESS.md) (kubectl access).
 
 ## Layout
 
@@ -40,7 +40,6 @@ task init && task test
 | `task bootstrap` | One-time `cdk bootstrap` of the account and region |
 | `task deploy ENV=sandbox.yaml` | Deploy every stack with `deploy/environments/sandbox.yaml` |
 | `task secrets:put -- --app-id ... --installation-id ... --private-key-file app.pem` | GitHub App credentials to SSM for the runners |
-| `task kube:connect` | Tunnel to the private EKS API and set kubectl context `caldera` |
 | `task destroy` | Destroy every stack, then `task verify:clean` |
 | `task local:up` / `task local:down` | kind cluster with Cilium, KEDA and `platform/` |
 | `uv run preview env up ... --dry-run` | Print the Helm command for a preview environment |
@@ -49,14 +48,6 @@ task init && task test
 
 Settings live in `deploy/environments/<name>.yaml`, keyed like CDK context: `domain` (required),
 `natGateways` (1 or 2), `budgetEmail` and `acmeEmail` (default `platform@<domain>`),
-`previewAllowlistCidrs`, `clusterAdminPrincipals`. `-c key=value` overrides the file. Run `task bootstrap`,
+`previewAllowlistCidrs`. `-c key=value` overrides the file. Run `task bootstrap`,
 `task deploy ENV=<name>.yaml` and `task secrets:put` ([GitHub App setup](docs/GITHUB_APP.md)),
 then point the domain's NS records at the new hosted zone.
-
-## Cluster Access
-
-The EKS endpoint is private. Any principal allowed to `sts:AssumeRole` on the `ClusterAdminRole`
-output of `CalderaCluster` can connect: by default every IAM principal in the account whose own
-policy allows it, or only the ARNs in `clusterAdminPrincipals`. Needs the AWS CLI and
-`session-manager-plugin`. Run `task kube:connect` (tunnel stays open), then
-`kubectl --context caldera get nodes` in a second terminal.
