@@ -1,27 +1,27 @@
 version: 1
 typePrefix: com.prismatichq
 types:
-  - type: vent.environment.requested.v1
+  - type: preview.environment.requested.v1
     producer: caldera CLI
-    subject: vent/<name>
-    schema: data/vent.environment.requested.v1.schema.json
-  - type: vent.environment.ready.v1
+    subject: preview-environment/<name>
+    schema: data/preview.environment.requested.v1.schema.json
+  - type: preview.environment.ready.v1
     producer: caldera CLI
-    subject: vent/<name>
-    schema: data/vent.environment.ready.v1.schema.json
-  - type: vent.environment.failed.v1
+    subject: preview-environment/<name>
+    schema: data/preview.environment.ready.v1.schema.json
+  - type: preview.environment.failed.v1
     producer: caldera CLI
-    subject: vent/<name>
-    schema: data/vent.environment.failed.v1.schema.json
-  - type: vent.environment.cooled.v1
+    subject: preview-environment/<name>
+    schema: data/preview.environment.failed.v1.schema.json
+  - type: preview.environment.deleted.v1
     producer: caldera CLI
-    subject: vent/<name>
-    schema: data/vent.environment.cooled.v1.schema.json
+    subject: preview-environment/<name>
+    schema: data/preview.environment.deleted.v1.schema.json
   - type: data.golden.built.v1
     producer: golden-image workflow
     subject: dataset/<dataset-version>
     schema: data/data.golden.built.v1.schema.json
   - type: test.e2e.completed.v1
     producer: E2E Job
-    subject: vent/<name>
+    subject: preview-environment/<name>
     schema: data/test.e2e.completed.v1.schema.json

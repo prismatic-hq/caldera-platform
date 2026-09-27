@@ -1,26 +1,28 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/prismatic-hq/caldera-platform/blob/main/contracts/events/data/vent.environment.cooled.v1.schema.json",
-  "title": "vent.environment.cooled.v1",
+  "$id": "https://github.com/prismatic-hq/caldera-platform/blob/main/contracts/events/data/preview.environment.failed.v1.schema.json",
+  "title": "preview.environment.failed.v1",
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "vent",
-    "trigger",
+    "environment",
+    "stage",
+    "reason",
     "timings"
   ],
   "properties": {
-    "vent": {
+    "environment": {
       "type": "string",
       "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
-      "maxLength": 48
+      "maxLength": 45
     },
-    "trigger": {
-      "enum": [
-        "branch-deleted",
-        "sweeper",
-        "manual"
-      ]
+    "stage": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
     },
     "timings": {
       "type": "object",

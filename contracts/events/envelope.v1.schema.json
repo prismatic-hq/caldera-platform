@@ -38,12 +38,12 @@
       "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+\\.[a-z][a-z0-9]*\\.[a-z][a-z0-9]*\\.[a-z][a-z0-9-]*\\.v[1-9][0-9]*$",
       "description": "<reverse-domain>.<domain>.<entity>.<action>.v<N>; the suffix must be registered in registry.v1.yaml.",
       "examples": [
-        "com.prismatichq.vent.environment.ready.v1"
+        "com.prismatichq.preview.environment.ready.v1"
       ]
     },
     "subject": {
       "type": "string",
-      "pattern": "^(vent|dataset)/[a-z0-9][a-z0-9._-]*$"
+      "pattern": "^(preview-environment|dataset)/[a-z0-9][a-z0-9._-]*$"
     },
     "time": {
       "type": "string",

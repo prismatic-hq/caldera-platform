@@ -7,10 +7,10 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 CONTRACTS = Path(__file__).resolve().parents[2] / "contracts" / "events"
 FR_9_1_TYPES = {
-    "vent.environment.requested.v1",
-    "vent.environment.ready.v1",
-    "vent.environment.failed.v1",
-    "vent.environment.cooled.v1",
+    "preview.environment.requested.v1",
+    "preview.environment.ready.v1",
+    "preview.environment.failed.v1",
+    "preview.environment.deleted.v1",
     "data.golden.built.v1",
     "test.e2e.completed.v1",
 }
