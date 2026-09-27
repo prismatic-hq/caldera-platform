@@ -1,0 +1,26 @@
+suite: postgres
+templates:
+  - templates/postgres.yaml
+set:
+  vent.name: quake-alerts
+  datasetVersion: ds-42
+tests:
+  - it: runs the golden image for the dataset version on emptyDir
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: golden-db:ds-42
+      - equal:
+          path: spec.template.spec.volumes[0].emptyDir.medium
+          value: Memory
+      - notExists:
+          path: spec.template.spec.volumes[0].persistentVolumeClaim
+      - equal:
+          path: spec.template.spec.priorityClassName
+          value: vent
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/part-of"]
+          value: vent

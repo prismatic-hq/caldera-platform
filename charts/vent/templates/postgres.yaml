@@ -1,0 +1,90 @@
+{{- $postgres := .Values.postgres }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "vent.labels" . | nindent 4 }}
+    {{- include "vent.selectorLabels" (dict "name" "postgres") | nindent 4 }}
+    app.kubernetes.io/component: database
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "vent.selectorLabels" (dict "name" "postgres") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "vent.labels" . | nindent 8 }}
+        {{- include "vent.selectorLabels" (dict "name" "postgres") | nindent 8 }}
+        app.kubernetes.io/component: database
+    spec:
+      priorityClassName: {{ .Values.priorityClassName }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "vent.podSecurityContext" (dict "uid" $postgres.uid) | nindent 8 }}
+      containers:
+        - name: postgres
+          image: {{ include "vent.image" (dict "root" . "image" $postgres.image "tag" ($postgres.image.tag | default .Values.datasetVersion)) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: {{ $postgres.database }}
+            - name: POSTGRES_USER
+              value: {{ $postgres.user }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ $postgres.user | quote }}, "-d", {{ $postgres.database | quote }}]
+            periodSeconds: 2
+          resources:
+            {{- toYaml $postgres.resources | nindent 12 }}
+          securityContext:
+            {{- include "vent.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir:
+            {{- if $postgres.memoryBacked }}
+            medium: Memory
+            {{- end }}
+            sizeLimit: {{ $postgres.sizeLimit }}
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "vent.labels" . | nindent 4 }}
+    {{- include "vent.selectorLabels" (dict "name" "postgres") | nindent 4 }}
+    app.kubernetes.io/component: database
+spec:
+  selector:
+    {{- include "vent.selectorLabels" (dict "name" "postgres") | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres

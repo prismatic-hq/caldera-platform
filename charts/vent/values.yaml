@@ -1,0 +1,58 @@
+vent:
+  name: ""
+
+datasetVersion: latest
+domain: preview.example.com
+priorityClassName: vent
+
+gateway:
+  name: preview
+  namespace: envoy-gateway-system
+  sectionName: https
+
+image:
+  registry: ""
+  pullPolicy: IfNotPresent
+
+services:
+  tremor:
+    image:
+      repository: tremor-api
+      tag: main
+    port: 8000
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+  steward:
+    image:
+      repository: steward-api
+      tag: main
+    port: 8000
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+
+postgres:
+  image:
+    repository: golden-db
+    tag: ""
+  database: prismatic
+  user: prismatic
+  uid: 10001
+  memoryBacked: true
+  sizeLimit: 1Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
