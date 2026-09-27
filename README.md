@@ -75,4 +75,5 @@ Steps:
 2. `ENV=<name>.yaml mise run deploy`.
 3. `ENV=<name>.yaml mise run dns:nameservers`, then set those as the domain's NS records at its registrar.
 4. `mise run secrets:put` after every fresh deploy ([GITHUB_APP.md](docs/GITHUB_APP.md)).
-5. `mise run kube:connect` for `kubectl` access.
+5. `mise run secrets:role-arns` after every deploy that creates or replaces the CI push roles, so the service repos get `AWS_ROLE_ARN`.
+6. `mise run kube:connect` for `kubectl` access.
