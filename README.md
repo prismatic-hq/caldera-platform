@@ -56,6 +56,7 @@ python3 setup.py    # then, with mise on PATH: mise run test
 | `mise run destroy` | Destroy every stack, then `mise run verify:clean` |
 | `mise run local:up` / `mise run local:down` | kind cluster with Cilium, KEDA and `platform/` |
 | `uv run preview env up ... --dry-run` | Print the Helm command for a preview environment |
+| `uv run preview env test --name <env>` | Run the E2E Helm test hook; CI reports it as the `e2e` check |
 
 ## Deploy
 
@@ -77,3 +78,36 @@ Steps:
 4. `mise run secrets:put` after every fresh deploy ([GITHUB_APP.md](docs/GITHUB_APP.md)).
 5. `mise run secrets:role-arns` after every deploy that creates or replaces the CI push roles, so the service repos get `AWS_ROLE_ARN`.
 6. `mise run kube:connect` for `kubectl` access.
+
+## Measured timings
+
+Not measured yet: fill this in from real runs against the deployed cluster. Every `preview`
+command prints a `{"timings": ...}` JSON line and writes a stage table to the job summary.
+Stages: `resolve` (feature group, GitHub lookups), `images` (ECR digests, dataset version),
+`chart_dependencies`, `helm_upgrade` (scheduling, image pulls, database, migrations and readiness,
+as `helm --wait` sees them), `e2e` (`helm test`), `teardown`.
+
+| Command | Stage | p50 (s) | p90 (s) | Runs |
+|---|---|---|---|---|
+| up | resolve | | | |
+| up | images | | | |
+| up | chart_dependencies | | | |
+| up | helm_upgrade | | | |
+| up | total | | | |
+| test | e2e | | | |
+| down | teardown | | | |
+
+| Section 1 target | Target p90 | Measured p90 |
+|---|---|---|
+| New preview environment, image already built (`up` total, new release) | under 60s | |
+| Push to URL with branch code (push to end of the `up` job) | under 3 min | |
+| Push to an existing preview environment (push to end of the `up` job) | under 2 min | |
+| Teardown (`down` total) | under 60s | |
+
+Push-to-URL times come from the Actions run (push event time to the `up` job's end). To fill the table from the last 20 preview runs of a service repo:
+
+```sh
+gh run list --repo prismatic-hq/tremor-api --workflow ci.yml --limit 20 --json databaseId \
+  --jq '.[].databaseId' | xargs -I{} gh run view {} --repo prismatic-hq/tremor-api --log \
+  | rg -o '\{"timings".*' | jq -rsf scripts/timings.jq
+```

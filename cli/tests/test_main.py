@@ -23,11 +23,22 @@ def no_external_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(main, "_parameters", fail)
     monkeypatch.chdir(REPO_ROOT)
     monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
 
 
 def invoke(*args: str) -> tuple[int, str]:
     result = runner.invoke(main.app, list(args))
     return result.exit_code, result.output
+
+
+def json_line(output: str, key: str) -> dict:
+    return next(
+        record
+        for line in output.splitlines()
+        if line.startswith("{")
+        for record in [json.loads(line)]
+        if key in record
+    )
 
 
 def test_resolve_prints_plan_as_json() -> None:
@@ -116,7 +127,7 @@ def test_up_dry_run_prints_helm_command() -> None:
     )
 
     assert code == 0
-    build, upgrade, _summary = output.splitlines()
+    build, upgrade, _summary, _timings = output.splitlines()
     assert build == "helm dependency build charts/services"
     assert upgrade.startswith("helm upgrade --install preview-quake-alerts charts/services")
     assert "services.steward.image.tag=sha-0f9e8d7" in output
@@ -140,6 +151,19 @@ def test_offline_up_without_every_sha_fails_clearly() -> None:
     assert "--offline needs --sha-for steward=<sha>" in output
 
 
+def test_down_reports_its_action_to_the_workflow(tmp_path: Path) -> None:
+    github_output = tmp_path / "output"
+
+    result = runner.invoke(
+        main.app,
+        ["env", "down", "--repo", "tremor-api", "--branch", "feature/x", "--offline", "--dry-run"],
+        env={"GITHUB_OUTPUT": str(github_output)},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert {"environment=x", "action=down"} <= set(github_output.read_text().splitlines())
+
+
 def test_down_dry_run_tears_down_when_no_branch_remains() -> None:
     code, output = invoke(
         "env",
@@ -153,11 +177,12 @@ def test_down_dry_run_tears_down_when_no_branch_remains() -> None:
     )
 
     assert code == 0
-    assert output.splitlines() == [
+    assert output.splitlines()[:-1] == [
         "helm uninstall preview-quake-alerts --namespace preview-quake-alerts --wait "
         "--ignore-not-found",
         "kubectl delete namespace preview-quake-alerts --wait=true --ignore-not-found",
     ]
+    assert list(json_line(output, "timings")["timings"]["stages"]) == ["resolve", "teardown"]
 
 
 def test_down_dry_run_redeploys_on_main_when_another_repo_keeps_branch() -> None:
@@ -287,7 +312,7 @@ def test_up_pins_digests_dataset_and_domain_from_aws(aws, tmp_path: Path) -> Non
     assert "datasetVersion=ds-42" in result.output
     assert "domain=preview.example.com" in result.output
     assert f"image.registry={REGISTRY}" in result.output
-    summary = json.loads(result.output.splitlines()[-1])
+    summary = json_line(result.output, "images")
     assert summary["images"]["tremor"] == {"tag": f"sha-a1b2c3d@{DIGEST}", "source": "sha"}
     assert summary["images"]["steward"]["source"] == "main"
     assert summary["urls"] == {
@@ -297,6 +322,7 @@ def test_up_pins_digests_dataset_and_domain_from_aws(aws, tmp_path: Path) -> Non
     outputs = github_output.read_text().splitlines()
     assert "environment=quake-alerts" in outputs
     assert "exact-image=true" in outputs
+    assert "url=https://tremor-quake-alerts.preview.example.com" in outputs
     assert json.loads(next(o for o in outputs if o.startswith("result="))[7:]) == summary
 
 
@@ -306,7 +332,7 @@ def test_up_reports_an_inexact_image_while_the_push_is_still_building(aws) -> No
     code, output = invoke(*UP_ARGS, "--dry-run")
 
     assert code == 0, output
-    assert json.loads(output.splitlines()[-1])["images"]["tremor"]["source"] == "main"
+    assert json_line(output, "images")["images"]["tremor"]["source"] == "main"
 
 
 def test_dataset_version_flag_overrides_ssm(aws) -> None:
@@ -362,16 +388,16 @@ def test_up_reuses_the_current_image_and_clears_a_pending_release(
     assert code == 0, output
     assert [c[1] for c in calls] == ["list", "status", "rollback", "dependency", "upgrade"]
     assert "services.tremor.image.tag=sha-9999999@sha256:9" in calls[-1]
-    assert json.loads(output.splitlines()[-1])["images"]["tremor"]["source"] == "current"
+    assert json_line(output, "images")["images"]["tremor"]["source"] == "current"
 
 
 def test_test_dry_run_prints_the_helm_test_command() -> None:
     code, output = invoke("env", "test", "--name", "quake-alerts", "--dry-run")
 
     assert code == 0
-    assert output.splitlines() == [
+    assert output.splitlines()[0] == (
         "helm test preview-quake-alerts --namespace preview-quake-alerts --logs --timeout 5m"
-    ]
+    )
 
 
 def test_failed_command_exits_with_its_code(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -385,3 +411,43 @@ def test_failed_command_exits_with_its_code(monkeypatch: pytest.MonkeyPatch) -> 
     assert code == 3
     assert "error: helm test preview-quake-alerts" in output
     assert "exit code 3" in output
+
+
+def test_up_publishes_stage_timings(aws, tmp_path: Path) -> None:
+    aws(ALL_IMAGES, PARAMETERS)
+    github_output = tmp_path / "output"
+    step_summary = tmp_path / "summary.md"
+
+    result = runner.invoke(
+        main.app,
+        [*UP_ARGS, "--dry-run"],
+        env={"GITHUB_OUTPUT": str(github_output), "GITHUB_STEP_SUMMARY": str(step_summary)},
+    )
+
+    assert result.exit_code == 0, result.output
+    timings = json_line(result.output, "timings")["timings"]
+    assert timings["command"] == "up"
+    assert timings["environment"] == "quake-alerts"
+    assert list(timings["stages"]) == ["resolve", "images", "chart_dependencies", "helm_upgrade"]
+    outputs = github_output.read_text().splitlines()
+    assert json.loads(next(o for o in outputs if o.startswith("timings="))[8:]) == timings
+    assert step_summary.read_text().startswith("### preview env up quake-alerts")
+
+
+def test_failed_e2e_still_publishes_its_timing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def run(command: list[str], **kwargs: object) -> None:
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(main.subprocess, "run", run)
+    step_summary = tmp_path / "summary.md"
+
+    result = runner.invoke(
+        main.app,
+        ["env", "test", "--name", "quake-alerts"],
+        env={"GITHUB_STEP_SUMMARY": str(step_summary)},
+    )
+
+    assert result.exit_code == 1
+    assert "| e2e |" in step_summary.read_text()

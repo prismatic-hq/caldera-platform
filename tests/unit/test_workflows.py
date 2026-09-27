@@ -66,3 +66,28 @@ def test_jobs_check_their_configuration_before_minting_a_token(workflow: str) ->
         env = steps[checks[0]]["env"]
         assert env["CLIENT_ID"] == "${{ secrets.CALDERA_APP_CLIENT_ID }}"
         assert env["PRIVATE_KEY"] == "${{ secrets.CALDERA_APP_PRIVATE_KEY }}"
+
+
+def steps(workflow: str, job: str) -> list[dict]:
+    return jobs(workflow)[job]["steps"]
+
+
+def test_e2e_runs_only_against_the_pushed_image() -> None:
+    e2e = next(step for step in steps("preview-environment.yml", "up") if step.get("id") == "e2e")
+
+    assert e2e["run"] == 'uv run preview env test --name "$ENVIRONMENT"'
+    assert e2e["if"] == "steps.deploy.outputs.exact-image == 'true'"
+
+
+def test_the_report_script_publishes_a_check_named_e2e() -> None:
+    script = WORKFLOWS.parent / "scripts" / "preview-report.cjs"
+
+    assert 'const CHECK_NAME = "e2e";' in script.read_text()
+    assert "preview-report.cjs" in (WORKFLOWS / "preview-environment.yml").read_text()
+
+
+def test_each_preview_deploy_is_a_github_deployment() -> None:
+    up = jobs("preview-environment.yml")["up"]
+
+    assert up["environment"]["name"] == "preview-${{ needs.resolve.outputs.environment }}"
+    assert up["environment"]["url"] == "${{ steps.deploy.outputs.url }}"

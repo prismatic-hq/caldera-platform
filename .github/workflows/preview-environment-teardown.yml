@@ -24,6 +24,7 @@ on:
 
 permissions:
   contents: read
+  deployments: write
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
@@ -118,8 +119,19 @@ jobs:
         with:
           version: ${{ env.KUBECTL_VERSION }}
       - run: uv sync --locked
-      - env:
+      - id: down
+        env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ inputs.repo }}
           BRANCH: ${{ inputs.branch }}
         run: uv run preview env down --repo "$REPO" --branch "$BRANCH"
+      - name: Mark the preview deployments inactive
+        if: steps.down.outputs.action == 'down'
+        uses: actions/github-script@v9.0.0
+        env:
+          ENVIRONMENT: ${{ steps.down.outputs.environment }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const { deactivate } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/preview-report.cjs`);
+            await deactivate({ github, context });
