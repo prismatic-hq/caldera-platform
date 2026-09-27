@@ -424,3 +424,30 @@ def test_cleanup_roles_can_check_their_own_stack_status(templates) -> None:
         "Effect": "Allow",
         "Resource": {"Ref": "AWS::StackId"},
     } in statements
+
+
+def grants_network_interfaces(document: dict) -> bool:
+    return any(
+        "ec2:CreateNetworkInterface" in statement["Action"] for statement in document["Statement"]
+    )
+
+
+def test_vpc_lambdas_are_created_after_their_network_interface_permissions(templates) -> None:
+    for name, template in templates.items():
+        roles = resources(template, "AWS::IAM::Role")
+        policies = resources(template, "AWS::IAM::Policy")
+        for logical_id, function in resources(template, "AWS::Lambda::Function").items():
+            properties = function["Properties"]
+            if "VpcConfig" not in properties:
+                continue
+            role_id = properties["Role"]["Fn::GetAtt"][0]
+            inline = roles[role_id]["Properties"].get("Policies", [])
+            if any(grants_network_interfaces(p["PolicyDocument"]) for p in inline):
+                continue
+            depends_on = function.get("DependsOn", [])
+            assert any(
+                policy_id in depends_on
+                and {"Ref": role_id} in policy["Properties"]["Roles"]
+                and grants_network_interfaces(policy["Properties"]["PolicyDocument"])
+                for policy_id, policy in policies.items()
+            ), f"{name}/{logical_id}"

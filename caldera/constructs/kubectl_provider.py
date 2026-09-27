@@ -34,7 +34,9 @@ def _harden(
         ),
         *extra,
     ]
-    role.attach_inline_policy(iam.Policy(function, "LeastPrivilege", statements=statements))
+    policy = iam.Policy(function, "LeastPrivilege", statements=statements)
+    role.attach_inline_policy(policy)
+    cfn_function.node.add_dependency(policy)
 
 
 def harden_kubectl_provider(cluster: eks.Cluster, vpc: ec2.IVpc, cluster_name: str) -> None:
