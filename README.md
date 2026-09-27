@@ -8,7 +8,8 @@ Related repos:
 - [tremor-api](https://github.com/prismatic-hq/tremor-api): seismic signal streams and alerts
 - [steward-api](https://github.com/prismatic-hq/steward-api): sites, crews and work orders
 
-Docs: [REQUIREMENTS.md](docs/REQUIREMENTS.md), [ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Docs: [REQUIREMENTS.md](docs/REQUIREMENTS.md), [ARCHITECTURE.md](docs/ARCHITECTURE.md),
+[GITHUB_APP.md](docs/GITHUB_APP.md).
 
 ## Layout
 
@@ -48,5 +49,5 @@ task init && task test
 Settings live in `deploy/environments/<name>.yaml`, keyed like CDK context: `domain` (required),
 `natGateways` (1 or 2), `budgetEmail` and `acmeEmail` (default `platform@<domain>`),
 `previewAllowlistCidrs`. `-c key=value` overrides the file. Run `task bootstrap`,
-`task deploy ENV=<name>.yaml` and `task secrets:put`, then point the domain's NS records at the
-new hosted zone.
+`task deploy ENV=<name>.yaml` and `task secrets:put` ([GitHub App setup](docs/GITHUB_APP.md)),
+then point the domain's NS records at the new hosted zone.
