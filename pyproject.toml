@@ -42,6 +42,6 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 known-first-party = ["caldera", "caldera_cli", "golden_seeder"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "cli/tests", "seeder/tests"]
+testpaths = ["tests", "cli/tests", "seeder/tests", "e2e"]
 addopts = "-ra --import-mode=importlib"
 pythonpath = ["."]
