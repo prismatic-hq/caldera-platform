@@ -237,7 +237,7 @@ class AddonsStack(Stack):
                             "externalTrafficPolicy": "Cluster",
                             "annotations": {
                                 **NLB_ANNOTATIONS,
-                                "external-dns.alpha.kubernetes.io/hostname": ",".join(hostnames),
+                                "external-dns.kubernetes.io/hostname": ",".join(hostnames),
                             },
                         },
                     },

@@ -373,6 +373,22 @@ def test_external_dns_may_only_change_the_wildcard_records(templates) -> None:
     }
 
 
+def test_envoy_service_announces_the_wildcards_with_the_external_dns_annotation(templates) -> None:
+    [proxy] = [
+        doc
+        for r in resources(templates["Addons"], "Custom::AWSCDK-EKS-KubernetesResource").values()
+        if isinstance(r["Properties"]["Manifest"], str)
+        for doc in json.loads(r["Properties"]["Manifest"])
+        if doc["kind"] == "EnvoyProxy"
+    ]
+    annotations = proxy["spec"]["provider"]["kubernetes"]["envoyService"]["annotations"]
+
+    assert annotations["external-dns.kubernetes.io/hostname"] == (
+        "*.preview.example.com,*.dev.example.com"
+    )
+    assert not [key for key in annotations if key.startswith("external-dns.alpha.")]
+
+
 def test_pod_identity_roles_trust_only_this_cluster(templates) -> None:
     trust = templates["Dns"].find_resources("AWS::IAM::Role")
     pod_roles = [
