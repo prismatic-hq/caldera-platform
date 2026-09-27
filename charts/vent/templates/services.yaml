@@ -1,0 +1,92 @@
+{{- range $name, $service := .Values.services }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "vent.labels" $ | nindent 4 }}
+    {{- include "vent.selectorLabels" (dict "name" $name) | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "vent.selectorLabels" (dict "name" $name) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "vent.labels" $ | nindent 8 }}
+        {{- include "vent.selectorLabels" (dict "name" $name) | nindent 8 }}
+        app.kubernetes.io/component: api
+    spec:
+      priorityClassName: {{ $.Values.priorityClassName }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "vent.podSecurityContext" (dict "uid" 10001) | nindent 8 }}
+      containers:
+        - name: api
+          image: {{ include "vent.image" (dict "root" $ "image" $service.image "tag" $service.image.tag) }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $service.port }}
+          env:
+            - name: DB_HOST
+              value: postgres
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: {{ $.Values.postgres.database }}
+            - name: DB_USER
+              value: {{ $.Values.postgres.user }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: password
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          resources:
+            {{- toYaml $service.resources | nindent 12 }}
+          securityContext:
+            {{- include "vent.containerSecurityContext" $ | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "vent.labels" $ | nindent 4 }}
+    {{- include "vent.selectorLabels" (dict "name" $name) | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  selector:
+    {{- include "vent.selectorLabels" (dict "name" $name) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $service.port }}
+      targetPort: http
+{{- end }}

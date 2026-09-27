@@ -1,0 +1,55 @@
+suite: network policies
+templates:
+  - templates/networkpolicies.yaml
+set:
+  vent.name: quake-alerts
+tests:
+  - it: denies all ingress and egress by default
+    documentSelector:
+      path: metadata.name
+      value: default-deny
+    asserts:
+      - equal:
+          path: spec.podSelector
+          value: {}
+      - equal:
+          path: spec.policyTypes
+          value: ["Ingress", "Egress"]
+  - it: allows the gateway namespace to reach the services only
+    documentSelector:
+      path: metadata.name
+      value: allow-gateway-to-services
+    asserts:
+      - equal:
+          path: spec.podSelector.matchLabels["app.kubernetes.io/component"]
+          value: api
+      - equal:
+          path: spec.ingress[0].from[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]
+          value: envoy-gateway-system
+  - it: allows egress to CoreDNS
+    documentSelector:
+      path: metadata.name
+      value: allow-dns
+    asserts:
+      - equal:
+          path: spec.egress[0].to[0].podSelector.matchLabels["k8s-app"]
+          value: kube-dns
+  - it: lets only service and migration pods reach postgres
+    documentSelector:
+      path: metadata.name
+      value: postgres-from-vent-workloads
+    asserts:
+      - equal:
+          path: spec.ingress[0].from[0].podSelector.matchExpressions[0].values
+          value: ["api", "migration"]
+  - it: keeps postgres out of the same-namespace allow
+    documentSelector:
+      path: metadata.name
+      value: allow-same-namespace
+    asserts:
+      - equal:
+          path: spec.podSelector.matchExpressions[0]
+          value:
+            key: app.kubernetes.io/component
+            operator: NotIn
+            values: ["database"]
