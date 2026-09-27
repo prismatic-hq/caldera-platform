@@ -15,11 +15,10 @@ from pathlib import Path
 
 from caldera.config import SERVICES_FILE
 from preview_cli.registry import ServiceRegistry
+from scripts.onepassword import OP_ITEM, OP_VAULT, OpError, op_reference, read_op
 
 CLIENT_ID = re.compile(r"^Iv[0-9A-Za-z.]{8,}$")
 REGION = re.compile(r"^[a-z]{2}(-[a-z]+)+-\d$")
-OP_VAULT = "Prismatic"
-OP_ITEM = "prismatic-hq GitHub App"
 
 
 @dataclass(frozen=True)
@@ -65,33 +64,6 @@ def put_github_settings(gh, org: str, repos: list[str], settings: list[GitHubSet
                 raise RuntimeError(f"failed to set {target}: {error.stderr or error}") from error
             written.append(target)
     return written
-
-
-class OpError(RuntimeError):
-    """A 1Password CLI read that failed; the message never contains the secret."""
-
-
-def op_reference(vault: str, item: str, field: str) -> str:
-    return f"op://{vault}/{item}/{field}"
-
-
-def read_op(reference: str) -> str:
-    try:
-        result = subprocess.run(
-            ["op", "read", reference], check=True, capture_output=True, text=True
-        )
-    except FileNotFoundError as error:
-        raise OpError(
-            "1Password CLI `op` not found: run `mise install` in this repo (it pins 1password)"
-        ) from error
-    except subprocess.CalledProcessError as error:
-        detail = (error.stderr or "").strip() or f"exit code {error.returncode}"
-        raise OpError(
-            f"op read failed for {reference}: {detail}. Enable Settings > Developer > "
-            "Integrate with 1Password CLI in the desktop app (docs/DEVELOPMENT.md), run "
-            "`op signin`, and check the vault and item names (--op-vault, --op-item)"
-        ) from error
-    return result.stdout
 
 
 def read_credentials(args: argparse.Namespace) -> tuple[str, str]:

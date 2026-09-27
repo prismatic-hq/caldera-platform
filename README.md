@@ -49,7 +49,7 @@ python3 setup.py    # then, with mise on PATH: mise run test
 | `mise run bootstrap` | One-time `cdk bootstrap` of the account and region |
 | `ENV=sandbox.yaml mise run deploy` | Deploy every stack with `deploy/environments/sandbox.yaml` |
 | `ENV=sandbox.yaml mise run dns:nameservers` | Print the hosted zone's Route 53 nameservers for the registrar |
-| `mise run secrets:put -- --app-id ... --installation-id ... --private-key-file app.pem` | GitHub App credentials to SSM for the runners |
+| `mise run secrets:put` | GitHub App credentials to SSM for the runners, read from 1Password |
 | `mise run secrets:github -- --region us-east-2` | GitHub App secrets and `AWS_REGION` on every repo, read from 1Password |
 | `mise run kube:connect` | Tunnel to the private EKS API, kubectl context `caldera` |
 | `mise run destroy` | Destroy every stack, then `mise run verify:clean` |
@@ -73,5 +73,5 @@ Steps:
 1. `mise run bootstrap` (once per account and region).
 2. `ENV=<name>.yaml mise run deploy`.
 3. `ENV=<name>.yaml mise run dns:nameservers`, then set those as the domain's NS records at its registrar.
-4. `mise run secrets:put -- ...` after every fresh deploy ([GITHUB_APP.md](docs/GITHUB_APP.md)).
+4. `mise run secrets:put` after every fresh deploy ([GITHUB_APP.md](docs/GITHUB_APP.md)).
 5. `mise run kube:connect` for `kubectl` access.

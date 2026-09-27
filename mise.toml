@@ -52,7 +52,7 @@ mise run verify:clean
 '''
 
 [tasks."secrets:put"]
-description = "Write the GitHub App credentials for the ARC runners to SSM Parameter Store"
+description = "Copy the GitHub App from 1Password to SSM Parameter Store for the ARC runners"
 run = "uv run python -m scripts.put_secrets"
 
 [tasks."dns:nameservers"]
