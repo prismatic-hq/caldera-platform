@@ -1,6 +1,7 @@
 from caldera.platform import build_platform
 
 EXPECTED_STACKS = [
+    "CalderaQuotas",
     "CalderaNetwork",
     "CalderaCluster",
     "CalderaRegistry",
@@ -20,7 +21,9 @@ def test_stack_dependencies_follow_the_deploy_order(new_app) -> None:
     stacks = build_platform(new_app())
 
     assert stacks["Network"] in stacks["Cluster"].dependencies
-    assert {stacks["Cluster"], stacks["Dns"]} <= set(stacks["Addons"].dependencies)
+    assert {stacks["Cluster"], stacks["Dns"], stacks["Quotas"]} <= set(
+        stacks["Addons"].dependencies
+    )
     assert {stacks["Cluster"], stacks["Registry"]} <= set(stacks["CiAccess"].dependencies)
 
 
