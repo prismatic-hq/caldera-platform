@@ -10,6 +10,13 @@ CDK_JSON = Path(__file__).resolve().parents[2] / "cdk.json"
 AppFactory = Callable[..., cdk.App]
 
 
+@pytest.fixture(autouse=True)
+def isolated_aws_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the developer's AWS profile out of stubbed boto3 sessions."""
+    for name in ("AWS_PROFILE", "AWS_DEFAULT_PROFILE"):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture(scope="session")
 def new_app() -> AppFactory:
     """Build an App with the cdk.json feature flags, as `cdk synth` does."""
