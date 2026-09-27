@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/prismatic-hq/caldera-platform/blob/main/contracts/events/data/vent.environment.failed.v1.schema.json",
+  "title": "vent.environment.failed.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "vent",
+    "stage",
+    "reason",
+    "timings"
+  ],
+  "properties": {
+    "vent": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 48
+    },
+    "stage": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timings": {
+      "type": "object",
+      "description": "Stage durations in seconds (REQUIREMENTS.md Section 1)",
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0
+      }
+    }
+  }
+}

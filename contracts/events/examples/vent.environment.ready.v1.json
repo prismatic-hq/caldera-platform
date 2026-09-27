@@ -1,0 +1,22 @@
+{
+  "specversion": "1.0",
+  "id": "5b1f0c3e-8f7a-4f5e-9d2c-3a4b5c6d7e8f",
+  "source": "//prismatic-hq/caldera/cli",
+  "type": "com.prismatichq.vent.environment.ready.v1",
+  "subject": "vent/quake-alerts",
+  "time": "2026-09-26T12:00:00Z",
+  "datacontenttype": "application/json",
+  "dataschema": "https://github.com/prismatic-hq/caldera-platform/blob/main/contracts/events/data/vent.environment.ready.v1.schema.json",
+  "data": {
+    "vent": "quake-alerts",
+    "urls": {
+      "tremor": "https://tremor-quake-alerts.preview.example.com",
+      "steward": "https://steward-quake-alerts.preview.example.com"
+    },
+    "timings": {
+      "resolve": 1.2,
+      "helm": 21.4,
+      "total": 38.9
+    }
+  }
+}
