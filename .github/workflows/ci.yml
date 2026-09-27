@@ -56,13 +56,6 @@ jobs:
         run: |
           uv run python -c "from caldera.nag_suppressions import SUPPRESSIONS as s; print('cdk-nag suppressions:', len(s))"
 
-  helm:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: azure/setup-helm@v5
-      - run: helm lint --strict charts/prismatic-service
-
   chart-lint:
     runs-on: ubuntu-latest
     steps:
