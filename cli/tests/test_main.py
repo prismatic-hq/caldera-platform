@@ -18,6 +18,7 @@ def no_external_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(main.subprocess, "run", fail)
     monkeypatch.setattr(main, "_github", fail)
     monkeypatch.chdir(REPO_ROOT)
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
 
 
 def invoke(*args: str) -> tuple[int, str]:
@@ -45,6 +46,20 @@ def test_resolve_prints_plan_as_json() -> None:
         "refs": {"tremor": "feature/quake-alerts", "steward": "feature/quake-alerts"},
         "joins_existing": False,
     }
+
+
+def test_resolve_writes_the_environment_to_the_github_output(tmp_path: Path) -> None:
+    github_output = tmp_path / "output"
+    github_output.write_text("previous=1\n")
+
+    result = runner.invoke(
+        main.app,
+        ["env", "resolve", "--repo", "steward-api", "--branch", "fix-crew-sync"],
+        env={"GITHUB_OUTPUT": str(github_output)},
+    )
+
+    assert result.exit_code == 0
+    assert github_output.read_text() == "previous=1\nenvironment=steward-fix-crew-sync\n"
 
 
 def test_resolve_skips_lookup_for_non_feature_branches() -> None:

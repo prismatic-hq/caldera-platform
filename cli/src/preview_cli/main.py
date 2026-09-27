@@ -59,6 +59,10 @@ RegistryOption = Annotated[
     str | None, typer.Option("--registry", envvar="PREVIEW_REGISTRY", help="ECR registry host")
 ]
 DatasetOption = Annotated[str, typer.Option("--dataset-version", envvar="PREVIEW_DATASET_VERSION")]
+GitHubOutputOption = Annotated[
+    Path | None,
+    typer.Option("--github-output", envvar="GITHUB_OUTPUT", help="File for GitHub step outputs"),
+]
 DEFAULT_SERVICES_FILE = Path("services.yaml")
 
 
@@ -127,6 +131,13 @@ def _run(commands: list[Command], dry_run: bool) -> None:
             subprocess.run(command, check=True)
 
 
+def _write_outputs(github_output: Path | None, outputs: dict[str, str]) -> None:
+    if github_output is None:
+        return
+    with github_output.open("a") as file:
+        file.writelines(f"{name}={value}\n" for name, value in outputs.items())
+
+
 def _plan_json(plan: PreviewPlan) -> str:
     return json.dumps(
         {
@@ -147,6 +158,7 @@ def resolve(
     branch_in: BranchInOption = None,
     offline: OfflineOption = False,
     services_file: ServicesFileOption = DEFAULT_SERVICES_FILE,
+    github_output: GitHubOutputOption = None,
 ) -> None:
     """Print the preview environment plan for a push as JSON."""
     services = _or_exit(ServiceRegistry.load, services_file)
@@ -154,6 +166,7 @@ def resolve(
     sharing = _or_exit(_sharing, services, pushed, branch, branch_in or [], offline)
     plan = _or_exit(resolve_push, services.names, pushed, branch, sharing)
     typer.echo(_plan_json(plan))
+    _write_outputs(github_output, {"environment": plan.environment})
 
 
 @env_app.command()

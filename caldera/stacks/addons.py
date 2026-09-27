@@ -30,6 +30,7 @@ WILDCARD_SECRET = "wildcard-tls"
 CLUSTER_ISSUER = "letsencrypt"
 GITHUB_APP_SECRET = "github-app"
 RUNNER_REPOS_CONTEXT = "runnerRepos"
+RUNNER_SCALE_SET_SUFFIX = "-runners"
 NLB_ANNOTATIONS = {
     f"service.beta.kubernetes.io/aws-load-balancer-{key}": value
     for key, value in {
@@ -38,6 +39,11 @@ NLB_ANNOTATIONS = {
         "proxy-protocol": "*",
     }.items()
 }
+
+
+def runner_scale_set(repo: str) -> str:
+    """The `runs-on` label of the repo's ARC scale set; reusable workflows run in the caller."""
+    return f"{repo}{RUNNER_SCALE_SET_SUFFIX}"
 
 
 def platform_manifests(directory: Path = PLATFORM_MANIFESTS) -> dict[str, list[dict]]:
@@ -388,14 +394,14 @@ class AddonsStack(Stack):
                 {
                     "githubConfigUrl": f"https://github.com/{self.config.github_org}/{repo}",
                     "githubConfigSecret": GITHUB_APP_SECRET,
-                    "runnerScaleSetName": f"{repo}-runners",
+                    "runnerScaleSetName": runner_scale_set(repo),
                     "minRunners": 0,
                     "maxRunners": 10,
                     "containerMode": {"type": "dind"},
                     "template": {"spec": {"serviceAccountName": RUNNER_SERVICE_ACCOUNT}},
                 },
                 after=[controller, access],
-                release=f"{repo}-runners",
+                release=runner_scale_set(repo),
             )
 
     @staticmethod
