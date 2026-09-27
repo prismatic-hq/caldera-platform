@@ -106,3 +106,23 @@ def test_runner_may_only_manage_leases_in_the_lock_namespace() -> None:
             "namespace": DEPLOYER_NAMESPACE,
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("resource", "verbs"),
+    [
+        ("jobs", {"create", "get", "watch", "delete"}),
+        ("pods", {"create", "get", "list", "watch", "delete"}),
+        ("pods/log", {"get"}),
+        ("deployments", {"create", "patch", "get", "watch", "delete"}),
+        ("secrets", {"create", "get", "list", "patch", "delete"}),
+        ("services", {"create", "patch", "delete"}),
+        ("networkpolicies", {"create", "patch", "delete"}),
+        ("httproutes", {"create", "patch", "delete"}),
+        ("events", {"list", "watch"}),
+    ],
+)
+def test_namespace_admin_covers_release_hooks_and_helm_test_logs(
+    resource: str, verbs: set[str]
+) -> None:
+    assert verbs <= granted(cluster_role(NAMESPACE_ROLE), resource)

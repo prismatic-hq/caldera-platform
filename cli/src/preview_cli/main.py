@@ -537,17 +537,18 @@ def reset(
     environment: Annotated[str, typer.Option("--name")],
     services_file: ServicesFileOption = DEFAULT_SERVICES_FILE,
     context: ContextOption = None,
+    chart: ChartOption = "charts/services",
     github_output: GitHubOutputOption = None,
     step_summary: StepSummaryOption = None,
     lock_wait: LockWaitOption = DEFAULT_LOCK_WAIT_SECONDS,
     lock_namespace: LockNamespaceOption = LOCK_NAMESPACE,
     dry_run: DryRun = False,
 ) -> None:
-    """Restart the preview environment database to return it to golden data."""
+    """Return the preview environment to golden data and re-run its branch migrations."""
     services = _or_exit(ServiceRegistry.load, services_file)
     _or_exit(validate_environment_name, environment, services.names)
     report = Report(github_output, step_summary)
-    target = Target(context=context)
+    target = Target(chart=chart, context=context)
     lock = LockOptions(lock_namespace, lock_wait)
     with (
         _timed("reset", report, environment) as stopwatch,
