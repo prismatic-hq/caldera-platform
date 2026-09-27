@@ -1,5 +1,4 @@
 import json
-import os
 from collections.abc import Callable
 from pathlib import Path
 
@@ -17,13 +16,6 @@ def isolated_aws_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep the developer's AWS profile out of stubbed boto3 sessions."""
     for name in ("AWS_PROFILE", "AWS_DEFAULT_PROFILE"):
         monkeypatch.delenv(name, raising=False)
-
-
-@pytest.fixture(autouse=True)
-def isolated_caldera_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep the developer's CALDERA_* settings out of synthesized templates."""
-    for name in [n for n in os.environ if n.startswith("CALDERA_")]:
-        monkeypatch.delenv(name)
 
 
 @pytest.fixture(scope="session")

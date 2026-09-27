@@ -12,7 +12,7 @@ dependencies = [
     "golden-seeder",
     "boto3>=1.43",
     "aws-cdk-lambda-layer-kubectl-v35>=2.2.2,<3",
-    "python-dotenv>=1.2.3",
+    "pyyaml>=6",
 ]
 
 [dependency-groups]

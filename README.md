@@ -35,9 +35,9 @@ task init && task test
 | Command | What it does |
 |---|---|
 | `task test` | pytest, helm unittest, ct lint, kubeconform, trivy config |
-| `task synth` | `cdk synth` with cdk-nag `AwsSolutionsChecks` |
+| `task synth ENV=sandbox.yaml` | `cdk synth` with cdk-nag `AwsSolutionsChecks` |
 | `task bootstrap` | One-time `cdk bootstrap` of the account and region |
-| `task deploy` | Deploy every stack with settings from `.env` |
+| `task deploy ENV=sandbox.yaml` | Deploy every stack with `deploy/environments/sandbox.yaml` |
 | `task secrets:put -- --app-id ... --installation-id ... --private-key-file app.pem` | GitHub App credentials to SSM for the runners |
 | `task destroy` | Destroy every stack, then `task verify:clean` |
 | `task local:up` / `task local:down` | kind cluster with Cilium, KEDA and `platform/` |
@@ -45,6 +45,8 @@ task init && task test
 
 ## Deploy
 
-`cp .env.example .env` and set `CALDERA_DOMAIN`, then `task bootstrap`, `task deploy` and
-`task secrets:put`, then point the domain's NS records at the new hosted zone. Every setting in
-`.env.example` is also a context key (`-c budgetEmail=...`), which overrides `.env`.
+Settings live in `deploy/environments/<name>.yaml`, keyed like CDK context: `domain` (required),
+`natGateways` (1 or 2), `budgetEmail` and `acmeEmail` (default `platform@<domain>`),
+`previewAllowlistCidrs`. `-c key=value` overrides the file. Run `task bootstrap`,
+`task deploy ENV=<name>.yaml` and `task secrets:put`, then point the domain's NS records at the
+new hosted zone.

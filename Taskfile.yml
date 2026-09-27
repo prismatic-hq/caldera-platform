@@ -27,7 +27,7 @@ tasks:
   synth:
     desc: cdk synth with cdk-nag AwsSolutionsChecks
     cmds:
-      - npx --yes aws-cdk@2 synth --quiet
+      - npx --yes aws-cdk@2 synth --quiet {{if .ENV}}-c env={{.ENV}}{{end}} {{.CLI_ARGS}}
 
   bootstrap:
     desc: One-time cdk bootstrap of the target account and region
@@ -35,14 +35,14 @@ tasks:
       - npx --yes aws-cdk@2 bootstrap {{.CLI_ARGS}}
 
   deploy:
-    desc: Deploy every stack with settings from .env; pass context overrides after --
+    desc: Deploy every stack, e.g. task deploy ENV=sandbox.yaml; pass context overrides after --
     cmds:
-      - npx --yes aws-cdk@2 deploy --all {{.CLI_ARGS}}
+      - npx --yes aws-cdk@2 deploy --all {{if .ENV}}-c env={{.ENV}}{{end}} {{.CLI_ARGS}}
 
   destroy:
     desc: Destroy every stack, then fail if any platform resource remains
     cmds:
-      - npx --yes aws-cdk@2 destroy --all --force {{.CLI_ARGS}}
+      - npx --yes aws-cdk@2 destroy --all --force {{if .ENV}}-c env={{.ENV}}{{end}} {{.CLI_ARGS}}
       - task: verify:clean
 
   secrets:put:
