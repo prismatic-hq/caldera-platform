@@ -1,3 +1,6 @@
+import subprocess
+from pathlib import Path
+
 import pytest
 
 from scripts.kube_connect import (
@@ -7,6 +10,7 @@ from scripts.kube_connect import (
     merge_kubeconfig,
     parse_args,
     pick_node,
+    use_context,
 )
 
 ENDPOINT = Endpoint(
@@ -109,3 +113,27 @@ def test_parse_args_rejects_invalid_input(argv: list[str], message: str) -> None
 def test_parse_args_defaults() -> None:
     args = parse_args([])
     assert (args.cluster, args.stack, args.port) == ("caldera", "CalderaCluster", 8443)
+
+
+def test_use_context_switches_kubectx_in_the_written_kubeconfig(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(
+        "scripts.kube_connect.subprocess.run", lambda args, **kwargs: calls.append((args, kwargs))
+    )
+
+    use_context(Path("/tmp/kubeconfig"))
+
+    [(args, kwargs)] = calls
+    assert args == ["kubectx", CONTEXT]
+    assert kwargs["env"]["KUBECONFIG"] == "/tmp/kubeconfig"
+    assert kwargs["check"] is True
+
+
+def test_use_context_failure_is_actionable(monkeypatch) -> None:
+    def failed(args, **kwargs):
+        raise subprocess.CalledProcessError(1, args, stderr="error: no context exists\n")
+
+    monkeypatch.setattr("scripts.kube_connect.subprocess.run", failed)
+
+    with pytest.raises(KubeConnectError, match="kubectx caldera failed: error: no context exists"):
+        use_context(Path("/tmp/kubeconfig"))

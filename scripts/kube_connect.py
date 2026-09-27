@@ -1,7 +1,7 @@
-"""Tunnel to the private EKS API through a system node and point kubectl context `caldera` at it.
+"""Tunnel to the private EKS API through a system node and switch kubectl to context `caldera`.
 
 Any principal that may assume the ClusterAdminRole output by the cluster stack can connect.
-The tunnel runs in the foreground; use `kubectl --context caldera ...` from another terminal.
+The tunnel runs in the foreground; use `kubectl ...` from another terminal.
 """
 
 import argparse
@@ -24,6 +24,7 @@ DEFAULT_KUBECONFIG = Path.home() / ".kube" / "config"
 REQUIRED_TOOLS = {
     "aws": "install the AWS CLI v2",
     "session-manager-plugin": "install it: brew install --cask session-manager-plugin",
+    "kubectx": "run mise install in this repo",
 }
 
 
@@ -185,6 +186,20 @@ def write_kubeconfig(path: Path, endpoint: Endpoint, port: int) -> None:
     path.chmod(0o600)
 
 
+def use_context(kubeconfig: Path) -> None:
+    try:
+        subprocess.run(
+            ["kubectx", CONTEXT],
+            env={**os.environ, "KUBECONFIG": str(kubeconfig)},
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as error:
+        detail = (error.stderr or "").strip() or f"exit code {error.returncode}"
+        raise KubeConnectError(f"kubectx {CONTEXT} failed: {detail}") from error
+
+
 def main(argv: list[str] | None = None) -> int:
     try:
         args = parse_args(sys.argv[1:] if argv is None else argv)
@@ -193,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
         endpoint = resolve_endpoint(session, args)
         node = system_node(session, args.cluster)
         write_kubeconfig(args.kubeconfig, endpoint, args.port)
+        use_context(args.kubeconfig)
     except KubeConnectError as error:
         print(f"kube-connect: {error}", file=sys.stderr)
         return 2
@@ -200,7 +216,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"kube-connect: AWS call failed: {error}", file=sys.stderr)
         return 1
     print(f"context {CONTEXT} -> localhost:{args.port} via {node}; Ctrl-C closes the tunnel")
-    print(f"in another terminal: kubectl --context {CONTEXT} get nodes")
+    print("in another terminal: kubectl get nodes")
     session_parameters = f"host={endpoint.host},portNumber=443,localPortNumber={args.port}"
     return subprocess.run(
         [

@@ -33,7 +33,7 @@ The principal running `mise run kube:connect` needs:
 
 ```sh
 mise run kube:connect                      # leave running; Ctrl-C closes the tunnel
-kubectl --context caldera get nodes    # in a second terminal
+kubectl get nodes                          # in a second terminal
 ```
 
 `mise run kube:connect -- --port 9443 --cluster caldera --stack CalderaCluster` overrides the
