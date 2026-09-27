@@ -3,7 +3,7 @@ from pathlib import Path
 import aws_cdk as cdk
 import pytest
 
-from caldera.config import ENVIRONMENTS_DIR, PlatformConfig
+from cdk.config import ENVIRONMENTS_DIR, PlatformConfig
 
 
 def config(**context: object) -> PlatformConfig:

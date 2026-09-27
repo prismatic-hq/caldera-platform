@@ -10,7 +10,7 @@ from pathlib import Path
 
 import boto3
 
-from caldera.config import ENVIRONMENTS_DIR, load_environment
+from cdk.config import ENVIRONMENTS_DIR, load_environment
 
 
 def domain_for(flag: str | None, env: str | None, environments_dir: Path) -> str:

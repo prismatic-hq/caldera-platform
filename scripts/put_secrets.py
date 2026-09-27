@@ -11,7 +11,7 @@ from pathlib import Path
 
 import boto3
 
-from caldera.config import github_app_parameter
+from cdk.config import github_app_parameter
 from scripts.onepassword import OP_ITEM, OP_VAULT, OpError, op_reference, read_op
 
 

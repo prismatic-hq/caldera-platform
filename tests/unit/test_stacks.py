@@ -4,8 +4,8 @@ from itertools import combinations
 import pytest
 from aws_cdk.assertions import Match, Template
 
-from caldera.platform import build_platform
-from caldera.stacks.addons import KUBECTL_CONCURRENCY
+from cdk.platform import build_platform
+from cdk.stacks.addons import KUBECTL_CONCURRENCY
 
 LATEST_RUNTIMES = {"python3.14", "nodejs24.x"}
 

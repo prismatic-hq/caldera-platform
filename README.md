@@ -18,7 +18,7 @@ Docs:
 
 | Path | Contents |
 |---|---|
-| `caldera/` | CDK stacks, constructs, Lambda handlers and cdk-nag suppressions |
+| `cdk/` | CDK stacks, constructs, Lambda handlers and cdk-nag suppressions |
 | `cli/`, `services.yaml` | `preview env resolve\|up\|down\|reset\|test` and the service registry it reads |
 | `charts/service/` | Helm chart for one HTTP service: Deployment, Service, optional HTTPRoute |
 | `charts/services/` | Umbrella chart that allows a consumer to easily deploy all services for an environment. Works for ephemeral/preview environments, stable environments, etc. |

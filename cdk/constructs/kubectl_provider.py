@@ -2,7 +2,7 @@ from aws_cdk import aws_eks_v2 as eks
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
 
-from caldera.constructs.cleanup import (
+from cdk.constructs.cleanup import (
     RUNTIME,
     log_statement,
     owned_log_group,

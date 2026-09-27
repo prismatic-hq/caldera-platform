@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from caldera.stacks.addons import RUNNER_SCALE_SET_SUFFIX, runner_scale_set
+from cdk.stacks.addons import RUNNER_SCALE_SET_SUFFIX, runner_scale_set
 
 WORKFLOWS = Path(__file__).resolve().parents[2] / ".github" / "workflows"
 PREVIEW_WORKFLOWS = ("preview-environment.yml", "preview-environment-teardown.yml")

@@ -7,10 +7,10 @@ from aws_cdk import aws_iam as iam
 from aws_cdk import aws_ssm as ssm
 from constructs import Construct
 
-from caldera.config import PlatformConfig
-from caldera.constructs.pod_identity import pod_identity_role
-from caldera.stacks.cluster import ClusterStack
-from caldera.stacks.registry import RegistryStack
+from cdk.config import PlatformConfig
+from cdk.constructs.pod_identity import pod_identity_role
+from cdk.stacks.cluster import ClusterStack
+from cdk.stacks.registry import RegistryStack
 from preview_cli.parameters import DATASET_VERSION_PARAMETER, PREVIEW_DOMAIN_PARAMETER
 
 GITHUB_ISSUER = "token.actions.githubusercontent.com"

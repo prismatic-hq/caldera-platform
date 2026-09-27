@@ -9,13 +9,13 @@ from aws_cdk import aws_sqs as sqs
 from aws_cdk.lambda_layer_kubectl_v35 import KubectlV35Layer
 from constructs import Construct
 
-from caldera.charts import CILIUM, KARPENTER, install
-from caldera.config import PlatformConfig
-from caldera.constructs.cleanup import vpc_arn
-from caldera.constructs.kubectl_provider import harden_kubectl_provider
-from caldera.constructs.pod_identity import pod_identity_role
-from caldera.policies import cilium_operator_statements, karpenter_controller_statements
-from caldera.stacks.network import NetworkStack
+from cdk.charts import CILIUM, KARPENTER, install
+from cdk.config import PlatformConfig
+from cdk.constructs.cleanup import vpc_arn
+from cdk.constructs.kubectl_provider import harden_kubectl_provider
+from cdk.constructs.pod_identity import pod_identity_role
+from cdk.policies import cilium_operator_statements, karpenter_controller_statements
+from cdk.stacks.network import NetworkStack
 
 KUBERNETES_VERSION = eks.KubernetesVersion.V1_35
 CILIUM_OPERATOR = "cilium-operator"

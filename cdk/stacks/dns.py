@@ -3,9 +3,9 @@ from aws_cdk import aws_iam as iam
 from aws_cdk import aws_route53 as route53
 from constructs import Construct
 
-from caldera.config import PlatformConfig
-from caldera.constructs.cleanup import CleanupProps, CleanupResource
-from caldera.constructs.pod_identity import pod_identity_role
+from cdk.config import PlatformConfig
+from cdk.constructs.cleanup import CleanupProps, CleanupResource
+from cdk.constructs.pod_identity import pod_identity_role
 
 
 def change_records(zone_arn: str, *, names: list[str], types: list[str]) -> iam.PolicyStatement:
