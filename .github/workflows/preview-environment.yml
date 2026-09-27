@@ -1,4 +1,4 @@
-name: vent
+name: preview-environment
 
 on:
   workflow_call:

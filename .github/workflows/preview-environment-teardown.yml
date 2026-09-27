@@ -1,4 +1,4 @@
-name: vent-cooling
+name: preview-environment-teardown
 
 on:
   workflow_call:
