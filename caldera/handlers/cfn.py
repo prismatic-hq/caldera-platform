@@ -104,8 +104,9 @@ def drain(event: dict, context: Any, cleanup: Cleanup, now: Callable[[], float])
         time.sleep(POLL_SECONDS)
 
 
-def is_failed_invocation_record(event: dict) -> bool:
-    return "requestPayload" in event and "responseContext" in event
+def report_failure(event: dict, context: Any) -> None:
+    condition = event.get("requestContext", {}).get("condition", "unknown")
+    respond(event["requestPayload"], "FAILED", f"re-invocation failed: {condition}")
 
 
 def run(
@@ -115,10 +116,6 @@ def run(
     now: Callable[[], float] = time.time,
     deleting: Callable[[dict], bool] = stack_is_deleting,
 ) -> None:
-    if is_failed_invocation_record(event):
-        condition = event.get("requestContext", {}).get("condition", "unknown")
-        respond(event["requestPayload"], "FAILED", f"re-invocation failed: {condition}")
-        return
     logger.info("%s %s", event["RequestType"], event["LogicalResourceId"])
     try:
         if event["RequestType"] != "Delete":

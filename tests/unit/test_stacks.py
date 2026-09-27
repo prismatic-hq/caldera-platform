@@ -398,13 +398,22 @@ def test_ecr_and_sts_traffic_stays_inside_the_vpc(templates) -> None:
     assert interface_services == ["api", "dkr", "sts"]
 
 
-def test_cleanup_functions_report_failed_async_reinvocations_to_themselves(templates) -> None:
+def test_cleanup_functions_report_failed_async_reinvocations_to_a_separate_reporter(
+    templates,
+) -> None:
     for name in ("Network", "Dns"):
         config = next(iter(resources(templates[name], "AWS::Lambda::EventInvokeConfig").values()))
         properties = config["Properties"]
         assert properties["MaximumRetryAttempts"] == 2
         destination = json.dumps(properties["DestinationConfig"]["OnFailure"]["Destination"])
-        assert "sweeper" in destination
+        assert "sweeper-failure-reporter" in destination
+        reporters = [
+            f["Properties"]
+            for f in resources(templates[name], "AWS::Lambda::Function").values()
+            if f["Properties"]["Handler"] == "cfn.report_failure"
+        ]
+        assert len(reporters) == 1
+        assert "VpcConfig" not in reporters[0]
 
 
 def test_cleanup_roles_can_check_their_own_stack_status(templates) -> None:

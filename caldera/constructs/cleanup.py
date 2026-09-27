@@ -84,22 +84,57 @@ def log_statement(log_group: logs.ILogGroup) -> iam.PolicyStatement:
     )
 
 
+def lambda_function_arn(scope: Construct, function_name: str) -> str:
+    return Stack.of(scope).format_arn(
+        service="lambda",
+        resource="function",
+        resource_name=function_name,
+        arn_format=ArnFormat.COLON_RESOURCE_NAME,
+    )
+
+
+class FailureReporter(Construct):
+    """Reports FAILED to CloudFormation when a cleanup Lambda's async re-invocation fails."""
+
+    def __init__(self, scope: Construct, construct_id: str, function_name: str) -> None:
+        super().__init__(scope, construct_id)
+        self.function_arn = lambda_function_arn(self, function_name)
+        log_group = owned_log_group(self, "Logs", f"/aws/lambda/{function_name}")
+        role = iam.Role(
+            self,
+            "Role",
+            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
+            inline_policies={"Report": iam.PolicyDocument(statements=[log_statement(log_group)])},
+        )
+        self.function = lambda_.Function(
+            self,
+            "Function",
+            function_name=function_name,
+            runtime=RUNTIME,
+            code=lambda_.Code.from_asset(str(HANDLERS_DIR)),
+            handler="cfn.report_failure",
+            timeout=Duration.minutes(1),
+            memory_size=128,
+            role=role,
+            log_group=log_group,
+        )
+
+
 class CleanupResource(Construct):
     """A Lambda-backed custom resource whose Delete handler removes runtime-created resources."""
 
     def __init__(self, scope: Construct, construct_id: str, *, props: CleanupProps) -> None:
         super().__init__(scope, construct_id)
-        stack = Stack.of(self)
-        function_arn = stack.format_arn(
-            service="lambda",
-            resource="function",
-            resource_name=props.function_name,
-            arn_format=ArnFormat.COLON_RESOURCE_NAME,
+        function_arn = lambda_function_arn(self, props.function_name)
+        reporter = FailureReporter(
+            self, "FailureReporter", f"{props.function_name}-failure-reporter"
         )
         log_group = owned_log_group(self, "Logs", f"/aws/lambda/{props.function_name}")
         statements = [
             log_statement(log_group),
-            iam.PolicyStatement(actions=["lambda:InvokeFunction"], resources=[function_arn]),
+            iam.PolicyStatement(
+                actions=["lambda:InvokeFunction"], resources=[function_arn, reporter.function_arn]
+            ),
             iam.PolicyStatement(
                 actions=["cloudformation:DescribeStacks"], resources=[Aws.STACK_ID]
             ),
@@ -131,7 +166,7 @@ class CleanupResource(Construct):
             vpc_subnets=ec2.SubnetSelection(subnets=network.subnets) if network else None,
             security_groups=[network.security_group] if network else None,
         )
-        lambda_.CfnEventInvokeConfig(
+        invoke_config = lambda_.CfnEventInvokeConfig(
             self,
             "AsyncInvoke",
             function_name=self.function.function_name,
@@ -139,9 +174,12 @@ class CleanupResource(Construct):
             maximum_retry_attempts=2,
             maximum_event_age_in_seconds=3600,
             destination_config=lambda_.CfnEventInvokeConfig.DestinationConfigProperty(
-                on_failure=lambda_.CfnEventInvokeConfig.OnFailureProperty(destination=function_arn)
+                on_failure=lambda_.CfnEventInvokeConfig.OnFailureProperty(
+                    destination=reporter.function_arn
+                )
             ),
         )
+        invoke_config.node.add_dependency(reporter.function)
         self.resource = CustomResource(
             self,
             "Resource",
