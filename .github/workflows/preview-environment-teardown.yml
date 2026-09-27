@@ -22,9 +22,14 @@ on:
 permissions:
   contents: read
 
+env:
+  HELM_VERSION: v4.3.0
+  KUBECTL_VERSION: v1.35.0
+
 jobs:
   resolve:
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
+    runs-on: ${{ github.event.repository.name }}-runners
     outputs:
       environment: ${{ steps.plan.outputs.environment }}
     steps:
@@ -41,13 +46,11 @@ jobs:
         env:
           REPO: ${{ inputs.repo }}
           BRANCH: ${{ inputs.branch }}
-        run: |
-          plan=$(uv run preview env resolve --repo "$REPO" --branch "$BRANCH" --offline)
-          echo "environment=$(jq -r .environment <<<"$plan")" >> "$GITHUB_OUTPUT"
+        run: uv run preview env resolve --repo "$REPO" --branch "$BRANCH" --offline
 
   down:
     needs: resolve
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.repository.name }}-runners
     concurrency:
       group: preview-${{ needs.resolve.outputs.environment }}
       cancel-in-progress: false
@@ -62,8 +65,14 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
+      - uses: azure/setup-helm@v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - uses: azure/setup-kubectl@v5.1.0
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
       - run: uv sync --locked
       - env:
           REPO: ${{ inputs.repo }}
           BRANCH: ${{ inputs.branch }}
-        run: uv run preview env down --repo "$REPO" --branch "$BRANCH" --dry-run
+        run: uv run preview env down --repo "$REPO" --branch "$BRANCH"

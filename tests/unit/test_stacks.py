@@ -501,3 +501,47 @@ def test_vpc_lambdas_get_the_access_lambda_requires_but_their_code_does_not(temp
             covers_lambda_vpc_access(s, "Deny", {"Null": {"lambda:SourceFunctionArn": "false"}})
             for s in statements
         ), function
+
+
+def runner_policy_statements(template: Template) -> list[dict]:
+    return [
+        statement
+        for policy in resources(template, "AWS::IAM::Policy").values()
+        if any(
+            role.get("Ref", "").startswith("RunnerRole")
+            for role in policy["Properties"].get("Roles", [])
+        )
+        for statement in policy["Properties"]["PolicyDocument"]["Statement"]
+    ]
+
+
+def test_runners_read_and_publish_the_dataset_version_and_read_the_preview_domain(
+    templates,
+) -> None:
+    ssm = [
+        statement
+        for statement in runner_policy_statements(templates["CiAccess"])
+        if any(str(action).startswith("ssm:") for action in _as_list(statement["Action"]))
+    ]
+    resources_by_action: dict[str, str] = {}
+    for statement in ssm:
+        for action in _as_list(statement["Action"]):
+            resources_by_action[action] = resources_by_action.get(action, "") + json.dumps(
+                statement["Resource"]
+            )
+
+    assert "golden-db/dataset-version" in resources_by_action["ssm:GetParameter"]
+    assert "PreviewDomain" in resources_by_action["ssm:GetParameter"]
+    assert "golden-db/dataset-version" in resources_by_action["ssm:PutParameter"]
+    assert "PreviewDomain" not in resources_by_action["ssm:PutParameter"]
+
+
+def test_preview_domain_is_published_for_the_cli(templates) -> None:
+    templates["CiAccess"].has_resource_properties(
+        "AWS::SSM::Parameter",
+        {"Name": "/prismatic/preview/domain", "Type": "String", "Value": "preview.example.com"},
+    )
+
+
+def _as_list(value: object) -> list:
+    return value if isinstance(value, list) else [value]

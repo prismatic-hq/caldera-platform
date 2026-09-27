@@ -2,12 +2,14 @@ from aws_cdk import Stack
 from aws_cdk import aws_ecr as ecr
 from aws_cdk import aws_events as events
 from aws_cdk import aws_iam as iam
+from aws_cdk import aws_ssm as ssm
 from constructs import Construct
 
 from caldera.config import PlatformConfig
 from caldera.constructs.pod_identity import pod_identity_role
 from caldera.stacks.cluster import ClusterStack
 from caldera.stacks.registry import RegistryStack
+from preview_cli.parameters import DATASET_VERSION_PARAMETER, PREVIEW_DOMAIN_PARAMETER
 
 GITHUB_ISSUER = "token.actions.githubusercontent.com"
 RUNNER_NAMESPACE = "arc-runners"
@@ -67,8 +69,29 @@ class CiAccessStack(Stack):
             self.runner_role, [*service_repositories, registry.golden_db, registry.build_cache]
         )
         self.bus.grant_put_events_to(self.runner_role)
+        self._runner_parameters(config)
         cluster.associate(
             self, "RunnerIdentity", RUNNER_NAMESPACE, RUNNER_SERVICE_ACCOUNT, self.runner_role
+        )
+
+    def _runner_parameters(self, config: PlatformConfig) -> None:
+        """SSM parameters the preview CLI reads; the golden-image job writes the dataset version."""
+        domain = ssm.StringParameter(
+            self,
+            "PreviewDomain",
+            parameter_name=PREVIEW_DOMAIN_PARAMETER,
+            string_value=config.preview_domain,
+        )
+        domain.grant_read(self.runner_role)
+        dataset_version = self.format_arn(
+            service="ssm",
+            resource="parameter",
+            resource_name=DATASET_VERSION_PARAMETER.lstrip("/"),
+        )
+        self.runner_role.add_to_principal_policy(
+            iam.PolicyStatement(
+                actions=["ssm:GetParameter", "ssm:PutParameter"], resources=[dataset_version]
+            )
         )
 
     def _github_role(self, construct_id: str, repo: str, subject: str) -> iam.Role:
