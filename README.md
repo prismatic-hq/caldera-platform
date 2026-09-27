@@ -51,6 +51,7 @@ python3 setup.py    # then, with mise on PATH: mise run test
 | `ENV=sandbox.yaml mise run dns:nameservers` | Print the hosted zone's Route 53 nameservers for the registrar |
 | `mise run secrets:put` | GitHub App credentials to SSM for the runners, read from 1Password |
 | `mise run secrets:github -- --region us-east-2` | GitHub App secrets and `AWS_REGION` on every repo, read from 1Password |
+| `mise run secrets:role-arns` | `AWS_ROLE_ARN` on each service repo, from the `CalderaCiAccess` push role outputs |
 | `mise run kube:connect` | Tunnel to the private EKS API and `kubectx caldera` |
 | `mise run destroy` | Destroy every stack, then `mise run verify:clean` |
 | `mise run local:up` / `mise run local:down` | kind cluster with Cilium, KEDA and `platform/` |

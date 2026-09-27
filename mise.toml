@@ -103,3 +103,7 @@ run = "uv run python scripts/verify_clean.py"
 [tasks."secrets:github"]
 description = "Copy the GitHub App from 1Password and AWS_REGION to every repo, e.g. -- --region us-east-2"
 run = "uv run python -m scripts.put_github_secrets"
+
+[tasks."secrets:role-arns"]
+description = "Set AWS_ROLE_ARN on each service repo from the CiAccess stack's push role outputs"
+run = "uv run python -m scripts.put_role_arns"
