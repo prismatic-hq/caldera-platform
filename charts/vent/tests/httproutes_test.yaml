@@ -1,4 +1,6 @@
 suite: http routes
+values:
+  - ../ci/default-values.yaml
 templates:
   - templates/httproutes.yaml
 set:

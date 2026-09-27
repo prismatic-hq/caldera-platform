@@ -1,5 +1,14 @@
 vent:
   name: ci
+services:
+  tremor:
+    image:
+      repository: tremor-api
+      tag: main
+  steward:
+    image:
+      repository: steward-api
+      tag: main
 postgres:
   image:
     repository: postgres

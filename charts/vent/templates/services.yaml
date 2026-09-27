@@ -1,4 +1,5 @@
-{{- range $name, $service := .Values.services }}
+{{- range $name, $overrides := .Values.services }}
+{{- $service := mustMergeOverwrite (deepCopy $.Values.serviceDefaults) $overrides }}
 ---
 apiVersion: apps/v1
 kind: Deployment
