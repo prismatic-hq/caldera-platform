@@ -118,21 +118,23 @@ def down_commands(environment: str, target: Target) -> list[Command]:
 
 
 def reset_commands(environment: str, target: Target) -> list[Command]:
-    namespace = f"preview-{environment}"
+    """Postgres and migrations are pre-upgrade hooks, so an upgrade restores golden data."""
+    release = f"preview-{environment}"
     return [
-        ["kubectl", "rollout", "restart", "deployment/postgres", "--namespace", namespace]
-        + _kubectl_context(target),
+        ["helm", "dependency", "build", target.chart],
         [
-            "kubectl",
-            "rollout",
-            "status",
-            "deployment/postgres",
+            "helm",
+            "upgrade",
+            release,
+            target.chart,
             "--namespace",
-            namespace,
+            release,
+            "--reuse-values",
+            "--wait",
             "--timeout",
-            "60s",
+            target.timeout,
         ]
-        + _kubectl_context(target),
+        + _helm_context(target),
     ]
 
 
