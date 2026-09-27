@@ -1,4 +1,4 @@
-from aws_cdk import Stack
+from aws_cdk import Acknowledgment, Stack, Validations
 from constructs import Construct
 
 from caldera.config import PlatformConfig
@@ -18,3 +18,8 @@ class ClusterStack(Stack):
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+        Validations.of(self).acknowledge(
+            Acknowledgment(
+                id="CloudFormation-Validate::F0001", reason="resources arrive in a later PR"
+            )
+        )

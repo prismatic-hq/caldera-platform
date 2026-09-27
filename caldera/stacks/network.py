@@ -1,4 +1,4 @@
-from aws_cdk import RemovalPolicy, Stack, Tags
+from aws_cdk import CfnResource, RemovalPolicy, Stack, Tags
 from aws_cdk import aws_budgets as budgets
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_iam as iam
@@ -6,7 +6,15 @@ from aws_cdk import aws_logs as logs
 from constructs import Construct
 
 from caldera.config import SSM_PREFIX, PlatformConfig
-from caldera.constructs.cleanup import CleanupProps, CleanupResource, vpc_arn
+from caldera.constructs.cleanup import CleanupProps, CleanupResource, owned_log_group, vpc_arn
+
+VPC_CIDR = "10.40.0.0/16"
+INTERFACE_ENDPOINTS = {
+    "EcrApi": ec2.InterfaceVpcEndpointAwsService.ECR,
+    "EcrDocker": ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
+    "Sts": ec2.InterfaceVpcEndpointAwsService.STS,
+}
+RESTRICT_DEFAULT_SG_PROVIDER = "Custom::VpcRestrictDefaultSGCustomResourceProvider"
 
 
 class NetworkStack(Stack):
@@ -25,7 +33,7 @@ class NetworkStack(Stack):
         self.vpc = ec2.Vpc(
             self,
             "Vpc",
-            ip_addresses=ec2.IpAddresses.cidr("10.40.0.0/16"),
+            ip_addresses=ec2.IpAddresses.cidr(VPC_CIDR),
             max_azs=2,
             nat_gateways=config.nat_gateways,
             subnet_configuration=[
@@ -45,6 +53,19 @@ class NetworkStack(Stack):
                 "S3": ec2.GatewayVpcEndpointOptions(service=ec2.GatewayVpcEndpointAwsService.S3)
             },
         )
+        endpoint_group = ec2.SecurityGroup(
+            self,
+            "EndpointSecurityGroup",
+            vpc=self.vpc,
+            description="HTTPS from the VPC to the interface endpoints",
+            allow_all_outbound=False,
+        )
+        endpoint_group.add_ingress_rule(ec2.Peer.ipv4(VPC_CIDR), ec2.Port.tcp(443))
+        for endpoint_id, service in INTERFACE_ENDPOINTS.items():
+            self.vpc.add_interface_endpoint(
+                endpoint_id, service=service, security_groups=[endpoint_group], open=False
+            )
+        self._own_restrict_default_sg_logs(config)
         for subnet in self.vpc.public_subnets:
             Tags.of(subnet).add("kubernetes.io/role/elb", "1")
         for subnet in self.vpc.private_subnets:
@@ -126,16 +147,22 @@ class NetworkStack(Stack):
             ),
         ]
 
-    def _budget(self, config: PlatformConfig) -> None:
-        subscribers = (
-            [
-                budgets.CfnBudget.SubscriberProperty(
-                    address=config.budget_email, subscription_type="EMAIL"
-                )
-            ]
-            if config.budget_email
-            else []
+    def _own_restrict_default_sg_logs(self, config: PlatformConfig) -> None:
+        """Give the default-SG provider Lambda a log group that `cdk destroy` deletes."""
+        provider = self.node.try_find_child(RESTRICT_DEFAULT_SG_PROVIDER)
+        if provider is None:
+            return
+        handler = provider.node.find_child("Handler")
+        if not isinstance(handler, CfnResource):
+            raise TypeError(f"{handler.node.path}: expected the provider's CfnResource")
+        log_group = owned_log_group(
+            self, "RestrictDefaultSgLogs", f"/aws/lambda/{config.cluster_name}-restrict-default-sg"
         )
+        handler.add_property_override("LoggingConfig", {"LogGroup": log_group.log_group_name})
+        restrict = self.vpc.node.find_child("RestrictDefaultSecurityGroupCustomResource")
+        restrict.node.add_dependency(log_group)
+
+    def _budget(self, config: PlatformConfig) -> None:
         budgets.CfnBudget(
             self,
             "Budget",
@@ -155,10 +182,12 @@ class NetworkStack(Stack):
                         threshold=80,
                         threshold_type="PERCENTAGE",
                     ),
-                    subscribers=subscribers,
+                    subscribers=[
+                        budgets.CfnBudget.SubscriberProperty(
+                            address=config.budget_email, subscription_type="EMAIL"
+                        )
+                    ],
                 )
                 for kind in ("ACTUAL", "FORECASTED")
-            ]
-            if subscribers
-            else None,
+            ],
         )

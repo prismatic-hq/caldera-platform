@@ -2,7 +2,8 @@
 
 Create and Update succeed immediately. Delete calls ``cleanup`` until it reports nothing left,
 re-invoking the Lambda asynchronously when its own time runs low, and fails with the names of
-the leftovers once the deadline passes.
+the leftovers once the deadline passes. Delete only cleans up while the whole stack is being
+deleted, so removing or renaming the resource on a live stack never tears the platform down.
 """
 
 import json
@@ -13,6 +14,7 @@ from collections.abc import Callable
 from typing import Any
 
 import boto3
+from botocore.exceptions import ClientError
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -22,6 +24,16 @@ Cleanup = Callable[[dict[str, Any]], list[str]]
 POLL_SECONDS = 15
 RESERVED_MILLIS = 90_000
 STARTED_AT = "CalderaStartedAt"
+RETRYABLE_ERROR_CODES = {
+    "InternalError",
+    "InternalFailure",
+    "PriorRequestNotComplete",
+    "RequestLimitExceeded",
+    "ServiceUnavailable",
+    "Throttling",
+    "ThrottlingException",
+    "TooManyRequestsException",
+}
 
 
 def respond(event: dict, status: str, reason: str = "") -> None:
@@ -57,12 +69,27 @@ def reinvoke(event: dict, context: Any) -> None:
     )
 
 
+def stack_is_deleting(event: dict) -> bool:
+    stacks = boto3.client("cloudformation").describe_stacks(StackName=event["StackId"])["Stacks"]
+    return stacks[0]["StackStatus"] == "DELETE_IN_PROGRESS"
+
+
+def attempt(cleanup: Cleanup, properties: dict) -> list[str]:
+    try:
+        return cleanup(properties)
+    except ClientError as error:
+        code = error.response["Error"]["Code"]
+        if code not in RETRYABLE_ERROR_CODES:
+            raise
+        return [f"retrying after {code}"]
+
+
 def drain(event: dict, context: Any, cleanup: Cleanup, now: Callable[[], float]) -> None:
     properties = event.get("ResourceProperties", {})
     started_at = float(event.setdefault(STARTED_AT, now()))
     deadline = started_at + deadline_seconds(properties)
     while True:
-        remaining = cleanup(properties)
+        remaining = attempt(cleanup, properties)
         if not remaining:
             respond(event, "SUCCESS")
             return
@@ -77,13 +104,30 @@ def drain(event: dict, context: Any, cleanup: Cleanup, now: Callable[[], float])
         time.sleep(POLL_SECONDS)
 
 
-def run(event: dict, context: Any, cleanup: Cleanup, now: Callable[[], float] = time.time) -> None:
+def is_failed_invocation_record(event: dict) -> bool:
+    return "requestPayload" in event and "responseContext" in event
+
+
+def run(
+    event: dict,
+    context: Any,
+    cleanup: Cleanup,
+    now: Callable[[], float] = time.time,
+    deleting: Callable[[dict], bool] = stack_is_deleting,
+) -> None:
+    if is_failed_invocation_record(event):
+        condition = event.get("requestContext", {}).get("condition", "unknown")
+        respond(event["requestPayload"], "FAILED", f"re-invocation failed: {condition}")
+        return
     logger.info("%s %s", event["RequestType"], event["LogicalResourceId"])
     try:
-        if event["RequestType"] == "Delete":
-            drain(event, context, cleanup, now)
-        else:
+        if event["RequestType"] != "Delete":
             respond(event, "SUCCESS")
+        elif STARTED_AT not in event and not deleting(event):
+            logger.info("stack is not being deleted; skipping cleanup")
+            respond(event, "SUCCESS")
+        else:
+            drain(event, context, cleanup, now)
     except Exception as error:
         logger.exception("custom resource handler failed")
         respond(event, "FAILED", f"{type(error).__name__}: {error}")

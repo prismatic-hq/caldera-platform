@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from aws_cdk import ArnFormat, CustomResource, Duration, RemovalPolicy, Stack
+from aws_cdk import ArnFormat, Aws, CustomResource, Duration, RemovalPolicy, Stack
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
@@ -100,6 +100,9 @@ class CleanupResource(Construct):
         statements = [
             log_statement(log_group),
             iam.PolicyStatement(actions=["lambda:InvokeFunction"], resources=[function_arn]),
+            iam.PolicyStatement(
+                actions=["cloudformation:DescribeStacks"], resources=[Aws.STACK_ID]
+            ),
             *props.statements,
         ]
         network = props.network
@@ -127,6 +130,17 @@ class CleanupResource(Construct):
             vpc=network.vpc if network else None,
             vpc_subnets=ec2.SubnetSelection(subnets=network.subnets) if network else None,
             security_groups=[network.security_group] if network else None,
+        )
+        lambda_.CfnEventInvokeConfig(
+            self,
+            "AsyncInvoke",
+            function_name=self.function.function_name,
+            qualifier="$LATEST",
+            maximum_retry_attempts=2,
+            maximum_event_age_in_seconds=3600,
+            destination_config=lambda_.CfnEventInvokeConfig.DestinationConfigProperty(
+                on_failure=lambda_.CfnEventInvokeConfig.OnFailureProperty(destination=function_arn)
+            ),
         )
         self.resource = CustomResource(
             self,

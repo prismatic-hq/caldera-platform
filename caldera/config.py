@@ -11,6 +11,14 @@ SSM_PREFIX = "/prismatic/"
 PLATFORM_TAG = "prismatic:platform"
 
 
+def parse_list(value: object) -> tuple[str, ...]:
+    """Context from `-c key=a,b` arrives as a string; from cdk.json as a list."""
+    items = value.split(",") if isinstance(value, str) else value
+    if not isinstance(items, list | tuple):
+        raise ValueError(f"expected a list or comma-separated string, got {value!r}")
+    return tuple(str(item).strip() for item in items if str(item).strip())
+
+
 @dataclass(frozen=True)
 class PlatformConfig:
     cluster_name: str
@@ -19,7 +27,7 @@ class PlatformConfig:
     platform_repo: str
     nat_gateways: int
     budget_limit_usd: int
-    budget_email: str | None
+    budget_email: str
     acme_email: str
     allowlist_cidrs: tuple[str, ...]
     registry: ServiceRegistry
@@ -41,9 +49,9 @@ class PlatformConfig:
             platform_repo=str(context("platformRepo", "caldera-platform")),
             nat_gateways=nat_gateways,
             budget_limit_usd=int(context("budgetLimitUsd", 400)),
-            budget_email=node.try_get_context("budgetEmail"),
+            budget_email=str(context("budgetEmail", f"platform@{domain}")),
             acme_email=str(context("acmeEmail", f"platform@{domain}")),
-            allowlist_cidrs=tuple(context("previewAllowlistCidrs", [])),
+            allowlist_cidrs=parse_list(context("previewAllowlistCidrs", [])),
             registry=ServiceRegistry.load(SERVICES_FILE),
         )
 

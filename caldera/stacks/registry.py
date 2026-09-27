@@ -6,11 +6,43 @@ from caldera.config import PlatformConfig
 
 GOLDEN_DB = "golden-db"
 BUILD_CACHE = "build-cache"
+GOLDEN_DB_VERSIONS_KEPT = 10
 
 
 def _image_repository(
-    scope: Construct, construct_id: str, name: str, moving_tag: str
+    scope: Construct,
+    construct_id: str,
+    name: str,
+    moving_tag: str,
+    keep_tagged: int | None = None,
 ) -> ecr.Repository:
+    rules: list[dict] = [
+        {
+            "description": f"keep images tagged {moving_tag}",
+            "tag_pattern_list": [moving_tag],
+            "max_image_count": 9999,
+        },
+        {
+            "description": "expire sha-* images 14 days after push",
+            "tag_pattern_list": ["sha-*"],
+            "max_image_age": Duration.days(14),
+        },
+    ]
+    if keep_tagged:
+        rules.append(
+            {
+                "description": f"keep the last {keep_tagged} tagged images",
+                "tag_pattern_list": ["*"],
+                "max_image_count": keep_tagged,
+            }
+        )
+    rules.append(
+        {
+            "description": "expire untagged images after 1 day",
+            "tag_status": ecr.TagStatus.UNTAGGED,
+            "max_image_age": Duration.days(1),
+        }
+    )
     return ecr.Repository(
         scope,
         construct_id,
@@ -23,24 +55,8 @@ def _image_repository(
         empty_on_delete=True,
         removal_policy=RemovalPolicy.DESTROY,
         lifecycle_rules=[
-            ecr.LifecycleRule(
-                rule_priority=1,
-                description=f"keep images tagged {moving_tag}",
-                tag_pattern_list=[moving_tag],
-                max_image_count=9999,
-            ),
-            ecr.LifecycleRule(
-                rule_priority=2,
-                description="expire sha-* images 14 days after push",
-                tag_pattern_list=["sha-*"],
-                max_image_age=Duration.days(14),
-            ),
-            ecr.LifecycleRule(
-                rule_priority=3,
-                description="expire untagged images after 1 day",
-                tag_status=ecr.TagStatus.UNTAGGED,
-                max_image_age=Duration.days(1),
-            ),
+            ecr.LifecycleRule(rule_priority=priority, **rule)
+            for priority, rule in enumerate(rules, start=1)
         ],
     )
 
@@ -56,7 +72,9 @@ class RegistryStack(Stack):
             image: _image_repository(self, f"Repo-{image}", image, "main")
             for image in config.service_images
         }
-        self.golden_db = _image_repository(self, "GoldenDb", GOLDEN_DB, "latest")
+        self.golden_db = _image_repository(
+            self, "GoldenDb", GOLDEN_DB, "latest", keep_tagged=GOLDEN_DB_VERSIONS_KEPT
+        )
         self.build_cache = ecr.Repository(
             self,
             "BuildCache",

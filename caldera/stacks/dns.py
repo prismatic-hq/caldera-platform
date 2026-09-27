@@ -8,6 +8,22 @@ from caldera.constructs.cleanup import CleanupProps, CleanupResource
 from caldera.constructs.pod_identity import pod_identity_role
 
 
+def change_records(zone_arn: str, *, names: list[str], types: list[str]) -> iam.PolicyStatement:
+    """ChangeResourceRecordSets limited to record names and types, per the Route 53 condition keys:
+    https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/specifying-rrset-conditions.html
+    """
+    return iam.PolicyStatement(
+        actions=["route53:ChangeResourceRecordSets"],
+        resources=[zone_arn],
+        conditions={
+            "ForAllValues:StringLike": {
+                "route53:ChangeResourceRecordSetsNormalizedRecordNames": names
+            },
+            "ForAllValues:StringEquals": {"route53:ChangeResourceRecordSetsRecordTypes": types},
+        },
+    )
+
+
 class DnsStack(Stack):
     """Route 53 hosted zone and Pod Identity roles for external-dns and cert-manager."""
 
@@ -23,24 +39,26 @@ class DnsStack(Stack):
             self,
             "ExternalDnsRole",
             [
+                change_records(
+                    zone_arn,
+                    names=[f"*{config.preview_domain}", f"*{config.dev_domain}"],
+                    types=["A", "AAAA", "TXT"],
+                ),
                 iam.PolicyStatement(
-                    actions=[
-                        "route53:ChangeResourceRecordSets",
-                        "route53:ListResourceRecordSets",
-                        "route53:ListTagsForResource",
-                    ],
+                    actions=["route53:ListResourceRecordSets", "route53:ListTagsForResource"],
                     resources=[zone_arn],
                 ),
                 iam.PolicyStatement(actions=["route53:ListHostedZones"], resources=["*"]),
             ],
+            cluster_name=config.cluster_name,
         )
         self.cert_manager_role = pod_identity_role(
             self,
             "CertManagerRole",
             [
+                change_records(zone_arn, names=["_acme-challenge.*"], types=["TXT"]),
                 iam.PolicyStatement(
-                    actions=["route53:ChangeResourceRecordSets", "route53:ListResourceRecordSets"],
-                    resources=[zone_arn],
+                    actions=["route53:ListResourceRecordSets"], resources=[zone_arn]
                 ),
                 iam.PolicyStatement(
                     actions=["route53:GetChange"],
@@ -56,6 +74,7 @@ class DnsStack(Stack):
                 ),
                 iam.PolicyStatement(actions=["route53:ListHostedZonesByName"], resources=["*"]),
             ],
+            cluster_name=config.cluster_name,
         )
 
         self.sweeper = CleanupResource(

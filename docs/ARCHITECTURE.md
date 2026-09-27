@@ -68,6 +68,8 @@ A pause-pod headroom Deployment holds spare preview environment capacity, sized 
 
 ## Known gaps
 
+- One platform per account and region: ECR repositories, cleanup Lambdas and their log groups use
+  fixed names (derived from `clusterName`) because CI and the teardown checks rely on them.
 - KEDA's `kubernetes-workload` trigger only counts pods in the `ScaledObject`'s own namespace, so
   it cannot see pods in `preview-*` namespaces as FR-7.3 assumes. The cron trigger works; replace the
   workload trigger with a Prometheus or metrics-api count across namespaces before relying on it.

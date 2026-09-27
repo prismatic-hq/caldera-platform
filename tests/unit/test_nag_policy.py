@@ -240,12 +240,12 @@ def test_suppression_policy(template: dict, expected_count: int) -> None:
 
 
 @pytest.fixture(scope="module")
-def synthesized_app(tmp_path_factory: pytest.TempPathFactory) -> cdk.App:
+def synthesized_app(tmp_path_factory: pytest.TempPathFactory, new_app) -> cdk.App:
     build = runpy.run_path(str(REPO_ROOT / "app.py"))["build"]
     return build(
-        cdk.App(
+        new_app(
+            {"aws:cdk:enable-path-metadata": True},
             outdir=str(tmp_path_factory.mktemp("cdk.out")),
-            context={"aws:cdk:enable-path-metadata": True},
         )
     )
 
