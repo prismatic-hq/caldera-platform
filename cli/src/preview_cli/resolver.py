@@ -14,20 +14,20 @@ class Action(StrEnum):
     DOWN = "down"
 
 
-class VentNameError(ValueError):
+class EnvironmentNameError(ValueError):
     pass
 
 
 @dataclass(frozen=True)
-class VentPlan:
-    vent: str
+class PreviewPlan:
+    environment: str
     action: Action
     refs: dict[str, str] = field(default_factory=dict)
     joins_existing: bool = False
 
     @property
     def release(self) -> str:
-        return f"vent-{self.vent}"
+        return f"preview-{self.environment}"
 
 
 def slug(value: str) -> str:
@@ -38,23 +38,26 @@ def feature_name(branch: str) -> str | None:
     return slug(branch.removeprefix(FEATURE_PREFIX)) if branch.startswith(FEATURE_PREFIX) else None
 
 
-def validate_vent_name(vent: str, services: Sequence[str]) -> str:
-    if not DNS_LABEL.match(vent):
-        raise VentNameError(f"vent name {vent!r} is not a valid DNS label")
-    for service in services:
-        label = f"{service}-{vent}"
-        if len(label) > DNS_LABEL_MAX:
-            raise VentNameError(
-                f"vent name {vent!r} is too long: hostname label {label!r} has {len(label)} "
-                f"characters, DNS allows {DNS_LABEL_MAX}; shorten the branch name"
-            )
-    release = f"vent-{vent}"
-    if len(release) > HELM_RELEASE_MAX:
-        raise VentNameError(
-            f"vent name {vent!r} is too long: release {release!r} has {len(release)} characters, "
-            f"Helm allows {HELM_RELEASE_MAX}; shorten the branch name"
+def validate_environment_name(environment: str, services: Sequence[str]) -> str:
+    if not DNS_LABEL.match(environment):
+        raise EnvironmentNameError(
+            f"preview environment name {environment!r} is not a valid DNS label"
         )
-    return vent
+    for service in services:
+        label = f"{service}-{environment}"
+        if len(label) > DNS_LABEL_MAX:
+            raise EnvironmentNameError(
+                f"preview environment name {environment!r} is too long: hostname label "
+                f"{label!r} has {len(label)} characters, DNS allows {DNS_LABEL_MAX}; "
+                "shorten the branch name"
+            )
+    release = f"preview-{environment}"
+    if len(release) > HELM_RELEASE_MAX:
+        raise EnvironmentNameError(
+            f"preview environment name {environment!r} is too long: release {release!r} has "
+            f"{len(release)} characters, Helm allows {HELM_RELEASE_MAX}; shorten the branch name"
+        )
+    return environment
 
 
 def _require_service(services: Sequence[str], service: str) -> None:
@@ -62,12 +65,14 @@ def _require_service(services: Sequence[str], service: str) -> None:
         raise ValueError(f"unknown service {service!r}; registry has {', '.join(services)}")
 
 
-def vent_name(services: Sequence[str], service: str, branch: str) -> str:
+def environment_name(services: Sequence[str], service: str, branch: str) -> str:
     _require_service(services, service)
     if branch == "main":
-        raise VentNameError("main is the baseline and never gets a vent")
+        raise EnvironmentNameError("main is the baseline and never gets a preview environment")
     name = feature_name(branch)
-    return validate_vent_name(name if name is not None else f"{service}-{slug(branch)}", services)
+    return validate_environment_name(
+        name if name is not None else f"{service}-{slug(branch)}", services
+    )
 
 
 def resolve_push(
@@ -75,27 +80,27 @@ def resolve_push(
     pushed: str,
     branch: str,
     sharing: frozenset[str],
-    existing_vents: frozenset[str] = frozenset(),
-) -> VentPlan:
-    vent = vent_name(services, pushed, branch)
+    existing_environments: frozenset[str] = frozenset(),
+) -> PreviewPlan:
+    environment = environment_name(services, pushed, branch)
     shared = sharing if feature_name(branch) is not None else frozenset()
-    return VentPlan(
-        vent=vent,
+    return PreviewPlan(
+        environment=environment,
         action=Action.UP,
         refs={name: branch if name == pushed or name in shared else "main" for name in services},
-        joins_existing=vent in existing_vents,
+        joins_existing=environment in existing_environments,
     )
 
 
 def resolve_delete(
     services: Sequence[str], deleted: str, branch: str, sharing: frozenset[str]
-) -> VentPlan:
-    vent = vent_name(services, deleted, branch)
+) -> PreviewPlan:
+    environment = environment_name(services, deleted, branch)
     remaining = sharing - {deleted} if feature_name(branch) is not None else frozenset()
     if not remaining:
-        return VentPlan(vent=vent, action=Action.DOWN)
-    return VentPlan(
-        vent=vent,
+        return PreviewPlan(environment=environment, action=Action.DOWN)
+    return PreviewPlan(
+        environment=environment,
         action=Action.UP,
         refs={name: branch if name in remaining else "main" for name in services},
         joins_existing=True,

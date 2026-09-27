@@ -7,21 +7,23 @@ from typing import Annotated
 
 import typer
 
-from caldera_cli.commands import Command, Target, down_commands, reset_commands, up_commands
-from caldera_cli.github import GitHub
-from caldera_cli.registry import ServiceRegistry
-from caldera_cli.resolver import (
+from preview_cli.commands import Command, Target, down_commands, reset_commands, up_commands
+from preview_cli.github import GitHub
+from preview_cli.registry import ServiceRegistry
+from preview_cli.resolver import (
     Action,
-    VentPlan,
+    PreviewPlan,
     feature_name,
     resolve_delete,
     resolve_push,
-    validate_vent_name,
+    validate_environment_name,
 )
 
 app = typer.Typer(no_args_is_help=True)
-vent_app = typer.Typer(no_args_is_help=True, help="Create, update, cool and reset vents.")
-app.add_typer(vent_app, name="vent")
+env_app = typer.Typer(
+    no_args_is_help=True, help="Create, update, tear down and reset preview environments."
+)
+app.add_typer(env_app, name="env")
 
 RepoOption = Annotated[str, typer.Option("--repo", help="Service repo, e.g. tremor-api")]
 BranchOption = Annotated[str, typer.Option("--branch")]
@@ -41,15 +43,15 @@ ShaForOption = Annotated[
 ]
 ServicesFileOption = Annotated[
     Path,
-    typer.Option("--services-file", envvar="CALDERA_SERVICES_FILE", help="Service registry"),
+    typer.Option("--services-file", envvar="PREVIEW_SERVICES_FILE", help="Service registry"),
 ]
 DryRun = Annotated[bool, typer.Option("--dry-run", help="Print commands without running them")]
 ContextOption = Annotated[str | None, typer.Option("--context", help="kubeconfig context")]
 ChartOption = Annotated[str, typer.Option("--chart")]
 RegistryOption = Annotated[
-    str | None, typer.Option("--registry", envvar="CALDERA_REGISTRY", help="ECR registry host")
+    str | None, typer.Option("--registry", envvar="PREVIEW_REGISTRY", help="ECR registry host")
 ]
-DatasetOption = Annotated[str, typer.Option("--dataset-version", envvar="CALDERA_DATASET_VERSION")]
+DatasetOption = Annotated[str, typer.Option("--dataset-version", envvar="PREVIEW_DATASET_VERSION")]
 DEFAULT_SERVICES_FILE = Path("services.yaml")
 
 
@@ -91,7 +93,7 @@ def _parse_shas(values: list[str]) -> dict[str, str]:
 
 
 def _shas(
-    services: ServiceRegistry, plan: VentPlan, known: dict[str, str], offline: bool
+    services: ServiceRegistry, plan: PreviewPlan, known: dict[str, str], offline: bool
 ) -> dict[str, str]:
     shas = {}
     for service in services.services:
@@ -102,7 +104,7 @@ def _shas(
     return shas
 
 
-def _existing_vents(target: Target, dry_run: bool) -> frozenset[str]:
+def _existing_environments(target: Target, dry_run: bool) -> frozenset[str]:
     if dry_run:
         return frozenset()
     command = [
@@ -117,7 +119,7 @@ def _existing_vents(target: Target, dry_run: bool) -> frozenset[str]:
     if target.context:
         command += ["--context", target.context]
     names = subprocess.run(command, check=True, capture_output=True, text=True).stdout.split()
-    return frozenset(name.removeprefix("vent-") for name in names)
+    return frozenset(name.removeprefix("preview-") for name in names)
 
 
 def _run(commands: list[Command], dry_run: bool) -> None:
@@ -127,10 +129,10 @@ def _run(commands: list[Command], dry_run: bool) -> None:
             subprocess.run(command, check=True)
 
 
-def _plan_json(plan: VentPlan) -> str:
+def _plan_json(plan: PreviewPlan) -> str:
     return json.dumps(
         {
-            "vent": plan.vent,
+            "environment": plan.environment,
             "release": plan.release,
             "action": plan.action,
             "refs": plan.refs,
@@ -140,7 +142,7 @@ def _plan_json(plan: VentPlan) -> str:
     )
 
 
-@vent_app.command()
+@env_app.command()
 def resolve(
     repo: RepoOption,
     branch: BranchOption,
@@ -148,7 +150,7 @@ def resolve(
     offline: OfflineOption = False,
     services_file: ServicesFileOption = DEFAULT_SERVICES_FILE,
 ) -> None:
-    """Print the vent plan for a push as JSON."""
+    """Print the preview environment plan for a push as JSON."""
     services = _or_exit(ServiceRegistry.load, services_file)
     pushed = _or_exit(services.by_repo, repo).name
     sharing = _or_exit(_sharing, services, pushed, branch, branch_in or [], offline)
@@ -156,7 +158,7 @@ def resolve(
     typer.echo(_plan_json(plan))
 
 
-@vent_app.command()
+@env_app.command()
 def up(
     repo: RepoOption,
     branch: BranchOption,
@@ -171,19 +173,19 @@ def up(
     registry: RegistryOption = None,
     dry_run: DryRun = False,
 ) -> None:
-    """Create or update the vent for a pushed branch."""
+    """Create or update the preview environment for a pushed branch."""
     target = Target(chart=chart, context=context, registry=registry)
     services = _or_exit(ServiceRegistry.load, services_file)
     pushed = _or_exit(services.by_repo, repo).name
     sharing = _or_exit(_sharing, services, pushed, branch, branch_in or [], offline)
-    existing = _existing_vents(target, dry_run)
+    existing = _existing_environments(target, dry_run)
     plan = _or_exit(resolve_push, services.names, pushed, branch, sharing, existing)
     known = {**_or_exit(_parse_shas, sha_for or []), pushed: sha}
     shas = _or_exit(_shas, services, plan, known, offline)
     _run(up_commands(plan, services.services, shas, dataset_version, target), dry_run)
 
 
-@vent_app.command()
+@env_app.command()
 def down(
     repo: RepoOption,
     branch: BranchOption,
@@ -197,27 +199,27 @@ def down(
     registry: RegistryOption = None,
     dry_run: DryRun = False,
 ) -> None:
-    """Cool the vent for a deleted branch, or redeploy it while another repo keeps the branch."""
+    """Tear down the preview environment for a deleted branch, or redeploy it if kept elsewhere."""
     target = Target(chart=chart, context=context, registry=registry)
     services = _or_exit(ServiceRegistry.load, services_file)
     deleted = _or_exit(services.by_repo, repo).name
     sharing = _or_exit(_sharing, services, deleted, branch, branch_in or [], offline)
     plan = _or_exit(resolve_delete, services.names, deleted, branch, sharing)
     if plan.action is Action.DOWN:
-        _run(down_commands(plan.vent, target), dry_run)
+        _run(down_commands(plan.environment, target), dry_run)
         return
     shas = _or_exit(_shas, services, plan, _or_exit(_parse_shas, sha_for or []), offline)
     _run(up_commands(plan, services.services, shas, dataset_version, target), dry_run)
 
 
-@vent_app.command()
+@env_app.command()
 def reset(
-    vent: Annotated[str, typer.Option("--vent")],
+    environment: Annotated[str, typer.Option("--name")],
     services_file: ServicesFileOption = DEFAULT_SERVICES_FILE,
     context: ContextOption = None,
     dry_run: DryRun = False,
 ) -> None:
-    """Restart the vent database to return it to golden data."""
+    """Restart the preview environment database to return it to golden data."""
     services = _or_exit(ServiceRegistry.load, services_file)
-    _or_exit(validate_vent_name, vent, services.names)
-    _run(reset_commands(vent, Target(context=context)), dry_run)
+    _or_exit(validate_environment_name, environment, services.names)
+    _run(reset_commands(environment, Target(context=context)), dry_run)

@@ -1,13 +1,13 @@
 [project]
 name = "caldera-platform"
 version = "0.1.0"
-description = "AWS CDK EKS platform and vent tooling for Prismatic HQ preview environments"
+description = "AWS CDK EKS platform and preview environment tooling for Prismatic HQ preview environments"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "aws-cdk-lib>=2.270.0,<3.0.0",
     "cdk-nag>=3.0.2,<4",
-    "caldera-cli",
+    "preview-cli",
     "constructs>=10.5.0,<11.0.0",
     "golden-seeder",
     "boto3>=1.43",
@@ -30,7 +30,7 @@ package = false
 members = ["cli", "seeder"]
 
 [tool.uv.sources]
-caldera-cli = { workspace = true }
+preview-cli = { workspace = true }
 golden-seeder = { workspace = true }
 
 [tool.ruff]
@@ -42,7 +42,7 @@ extend-exclude = ["cdk.out"]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["caldera", "caldera_cli", "golden_seeder"]
+known-first-party = ["caldera", "preview_cli", "golden_seeder"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "cli/tests", "seeder/tests", "e2e"]

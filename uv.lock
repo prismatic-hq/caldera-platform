@@ -4,9 +4,9 @@ requires-python = "==3.12.*"
 
 [manifest]
 members = [
-    "caldera-cli",
     "caldera-platform",
     "golden-seeder",
+    "preview-cli",
 ]
 
 [[package]]
@@ -125,33 +125,16 @@ wheels = [
 ]
 
 [[package]]
-name = "caldera-cli"
-version = "0.1.0"
-source = { editable = "cli" }
-dependencies = [
-    { name = "httpx" },
-    { name = "pyyaml" },
-    { name = "typer" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx", specifier = ">=0.28" },
-    { name = "pyyaml", specifier = ">=6" },
-    { name = "typer", specifier = ">=0.27" },
-]
-
-[[package]]
 name = "caldera-platform"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "aws-cdk-lib" },
     { name = "boto3" },
-    { name = "caldera-cli" },
     { name = "cdk-nag" },
     { name = "constructs" },
     { name = "golden-seeder" },
+    { name = "preview-cli" },
 ]
 
 [package.dev-dependencies]
@@ -168,10 +151,10 @@ dev = [
 requires-dist = [
     { name = "aws-cdk-lib", specifier = ">=2.270.0,<3.0.0" },
     { name = "boto3", specifier = ">=1.43" },
-    { name = "caldera-cli", editable = "cli" },
     { name = "cdk-nag", specifier = ">=3.0.2,<4" },
     { name = "constructs", specifier = ">=10.5.0,<11.0.0" },
     { name = "golden-seeder", editable = "seeder" },
+    { name = "preview-cli", editable = "cli" },
 ]
 
 [package.metadata.requires-dev]
@@ -529,6 +512,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/74/89/1f3e8e1fc3e97de0fa963495832f581f025f29471602a309e48808244292/pre_commit-4.6.2.tar.gz", hash = "sha256:8f5d7bfb021ecdbcd9d49d89847082dd24172ccde534390081a679ad046e2441", size = 198670, upload-time = "2026-08-10T22:07:18.421Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/45/e2/bbb7129c9e7999a6b8ee9cca3b66486c25c423ab5a75f34071798b74ce94/pre_commit-4.6.2-py2.py3-none-any.whl", hash = "sha256:e2dde9a75d3bce11bd3831c26d134df00a2803c1d818be6a0383c3dcda25dc4e", size = 226202, upload-time = "2026-08-10T22:07:16.942Z" },
+]
+
+[[package]]
+name = "preview-cli"
+version = "0.1.0"
+source = { editable = "cli" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pyyaml" },
+    { name = "typer" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28" },
+    { name = "pyyaml", specifier = ">=6" },
+    { name = "typer", specifier = ">=0.27" },
 ]
 
 [[package]]

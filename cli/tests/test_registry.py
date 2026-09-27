@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from caldera_cli.registry import ServiceRegistry, ServiceSpec
+from preview_cli.registry import ServiceRegistry, ServiceSpec
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TREMOR = {"name": "tremor", "repo": "tremor-api", "image": "tremor-api", "port": 8000}

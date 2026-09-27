@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
-from caldera_cli.registry import ServiceSpec
-from caldera_cli.resolver import VentPlan
+from preview_cli.registry import ServiceSpec
+from preview_cli.resolver import PreviewPlan
 
 Command = list[str]
 
@@ -27,14 +27,14 @@ def image_tag(sha: str) -> str:
 
 
 def up_commands(
-    plan: VentPlan,
+    plan: PreviewPlan,
     services: tuple[ServiceSpec, ...],
     shas: dict[str, str],
     dataset_version: str,
     target: Target,
 ) -> list[Command]:
     namespace = plan.release
-    strings = [f"vent.name={plan.vent}", f"datasetVersion={dataset_version}"]
+    strings = [f"vent.name={plan.environment}", f"datasetVersion={dataset_version}"]
     numbers = []
     for service in services:
         strings += [
@@ -64,8 +64,8 @@ def up_commands(
     return [command + _helm_context(target)]
 
 
-def down_commands(vent: str, target: Target) -> list[Command]:
-    release = f"vent-{vent}"
+def down_commands(environment: str, target: Target) -> list[Command]:
+    release = f"preview-{environment}"
     return [
         ["helm", "uninstall", release, "--namespace", release, "--wait", "--ignore-not-found"]
         + _helm_context(target),
@@ -74,8 +74,8 @@ def down_commands(vent: str, target: Target) -> list[Command]:
     ]
 
 
-def reset_commands(vent: str, target: Target) -> list[Command]:
-    namespace = f"vent-{vent}"
+def reset_commands(environment: str, target: Target) -> list[Command]:
+    namespace = f"preview-{environment}"
     return [
         ["kubectl", "rollout", "restart", "deployment/postgres", "--namespace", namespace]
         + _kubectl_context(target),
