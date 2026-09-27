@@ -1,0 +1,10 @@
+vent:
+  name: quake-alerts
+datasetVersion: ds-0123abcd
+domain: preview.prismatic.dev
+image:
+  registry: 123456789012.dkr.ecr.us-east-1.amazonaws.com
+services:
+  tremor:
+    image:
+      tag: sha-a1b2c3d
