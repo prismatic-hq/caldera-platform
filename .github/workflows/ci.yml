@@ -79,7 +79,7 @@ jobs:
       - uses: azure/setup-helm@v5.0.1
         with:
           version: ${{ env.HELM_VERSION }}
-      - name: Render vent examples and platform manifests
+      - name: Render preview environment examples and platform manifests
         run: |
           mkdir -p rendered
           for values in charts/preview-environment/ci/*-values.yaml; do
