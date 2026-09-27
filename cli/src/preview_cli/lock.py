@@ -185,7 +185,7 @@ class KubectlLeases:
         if "namespaces" in error and "not found" in error:
             raise LookupError(
                 f"lease namespace {self.namespace} not found: it is created with the platform "
-                "(caldera/runner_access.py); create it for local clusters"
+                "(cdk/runner_access.py); create it for local clusters"
             )
         raise OSError(f"kubectl {action} lease {self.namespace}/{name} failed: {error}")
 
