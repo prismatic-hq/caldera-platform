@@ -87,7 +87,34 @@ def test_the_report_script_publishes_a_check_named_e2e() -> None:
 
 
 def test_each_preview_deploy_is_a_github_deployment() -> None:
-    up = jobs("preview-environment.yml")["up"]
+    record = next(
+        step for step in steps("preview-environment.yml", "up") if step.get("id") == "deployment"
+    )
 
-    assert up["environment"]["name"] == "preview-${{ needs.resolve.outputs.environment }}"
-    assert up["environment"]["url"] == "${{ steps.deploy.outputs.url }}"
+    assert record["if"] == "steps.deploy.outcome == 'success'"
+    assert record["env"]["ENVIRONMENT"] == "${{ steps.deploy.outputs.environment }}"
+    assert record["env"]["URL"] == "${{ steps.deploy.outputs.url }}"
+    assert "recordDeployment" in record["with"]["script"]
+
+
+@pytest.mark.parametrize("workflow", PREVIEW_WORKFLOWS)
+def test_preview_workflows_run_in_one_job(workflow: str) -> None:
+    assert len(jobs(workflow)) == 1
+
+
+def test_deploys_and_teardowns_of_one_branch_share_a_concurrency_group() -> None:
+    up = jobs("preview-environment.yml")["up"]["concurrency"]
+    down = jobs("preview-environment-teardown.yml")["down"]["concurrency"]
+
+    assert up["group"] == down["group"] == "preview-${{ inputs.repo }}-${{ inputs.branch }}"
+    assert up["cancel-in-progress"] is True
+    assert down["cancel-in-progress"] is False
+
+
+@pytest.mark.parametrize("workflow", PREVIEW_WORKFLOWS)
+def test_preview_jobs_install_only_the_cli(workflow: str) -> None:
+    for name, job in jobs(workflow).items():
+        runs = [step["run"] for step in job["steps"] if "uv sync" in step.get("run", "")]
+
+        assert runs == ["uv sync --locked --package preview-cli --no-dev"], f"{workflow}:{name}"
+        assert job["env"]["UV_NO_SYNC"] == "1", f"{workflow}:{name}"
