@@ -437,10 +437,56 @@ def test_reset_releases_the_lock_when_the_helm_upgrade_fails(
     assert store.leases == {}
 
 
-def test_up_reuses_the_current_image_and_clears_a_pending_release(
-    aws, leases, monkeypatch: pytest.MonkeyPatch
+@pytest.fixture
+def branches(monkeypatch: pytest.MonkeyPatch):
+    def install(existing: set[tuple[str, str]]) -> list[str]:
+        requested: list[str] = []
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            requested.append(request.url.path)
+            parts = request.url.path.split("/", 5)
+            if len(parts) < 6:
+                return httpx.Response(200, json={})
+            found = (parts[3], parts[5]) in existing
+            return httpx.Response(200 if found else 404, json={})
+
+        client = httpx.Client(base_url=API_URL, transport=httpx.MockTransport(respond))
+        monkeypatch.setattr(main, "_github", lambda: GitHub(None, client))
+        return requested
+
+    return install
+
+
+def test_up_under_the_lock_skips_a_branch_deleted_since_the_push(
+    leases, branches, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     store = leases(MemoryLeases())
+    requested = branches(set())
+    calls: list[list[str]] = []
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(main.subprocess, "run", run)
+    github_output = tmp_path / "output"
+
+    result = runner.invoke(main.app, list(UP_ARGS), env={"GITHUB_OUTPUT": str(github_output)})
+
+    assert result.exit_code == 0, result.output
+    assert "no longer exists" in result.output
+    assert [c[1] for c in calls] == ["get"]
+    assert "/repos/prismatic-hq/tremor-api/branches/feature/quake-alerts" in requested
+    assert "skipped=true" in github_output.read_text().splitlines()
+    assert len(store.holders) == 1
+    assert store.leases == {}
+
+
+def test_up_reuses_the_current_image_and_clears_a_pending_release(
+    aws, leases, branches, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = leases(MemoryLeases())
+    branches({("tremor-api", "feature/quake-alerts")})
     aws({("steward-api", "sha-0f9e8d7"), ("golden-db", "ds-42")}, PARAMETERS)
     status = {
         "info": {"status": "pending-upgrade"},
