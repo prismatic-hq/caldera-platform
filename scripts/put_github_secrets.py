@@ -87,8 +87,9 @@ def read_op(reference: str) -> str:
     except subprocess.CalledProcessError as error:
         detail = (error.stderr or "").strip() or f"exit code {error.returncode}"
         raise OpError(
-            f"op read failed for {reference}: {detail}. Run `op signin` and check the vault and "
-            "item names (--op-vault, --op-item)"
+            f"op read failed for {reference}: {detail}. Enable Settings > Developer > "
+            "Integrate with 1Password CLI in the desktop app (docs/DEVELOPMENT.md), run "
+            "`op signin`, and check the vault and item names (--op-vault, --op-item)"
         ) from error
     return result.stdout
 
