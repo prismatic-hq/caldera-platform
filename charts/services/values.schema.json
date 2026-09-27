@@ -61,6 +61,30 @@
         },
         "resources": {
           "$ref": "#/definitions/resources"
+        },
+        "migration": {
+          "$ref": "#/definitions/migration"
+        }
+      }
+    },
+    "migration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "command": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     }
@@ -156,11 +180,11 @@
         },
         "database": {
           "type": "string",
-          "minLength": 1
+          "pattern": "^[a-z_][a-z0-9_]*$"
         },
         "user": {
           "type": "string",
-          "minLength": 1
+          "pattern": "^[a-z_][a-z0-9_]*$"
         },
         "uid": {
           "type": "integer",
@@ -181,7 +205,8 @@
       "type": "object",
       "required": [
         "port",
-        "resources"
+        "resources",
+        "migration"
       ],
       "additionalProperties": false,
       "properties": {
@@ -192,6 +217,20 @@
         },
         "resources": {
           "$ref": "#/definitions/resources"
+        },
+        "migration": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/migration"
+            },
+            {
+              "required": [
+                "enabled",
+                "command",
+                "timeoutSeconds"
+              ]
+            }
+          ]
         }
       }
     },

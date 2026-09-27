@@ -23,3 +23,39 @@ tests:
       - equal:
           path: spec.template.metadata.labels["prismatic.dev/environment"]
           value: quake-alerts
+  - it: is recreated from the golden image as a hook before the migration Jobs
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-install,pre-upgrade
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "-10"
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: before-hook-creation
+  - it: keeps one Service for the life of the environment so its address never changes
+    documentSelector:
+      path: kind
+      value: Service
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-install
+      - equal:
+          path: spec.selector
+          value:
+            app.kubernetes.io/name: postgres
+  - it: reports the release revision it was started by, so migrations never hit an older pod
+    release:
+      revision: 7
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: ["-c", "prismatic.release_revision=7"]

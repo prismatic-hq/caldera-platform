@@ -1,0 +1,120 @@
+suite: migrations
+values:
+  - ../ci/default-values.yaml
+templates:
+  - templates/migrations.yaml
+set:
+  environment.name: quake-alerts
+  image.registry: registry.example
+  services.tremor.image.tag: sha-a1b2c3d
+tests:
+  - it: renders one migration Job per service
+    asserts:
+      - hasDocuments:
+          count: 2
+      - isKind:
+          of: Job
+  - it: runs each service's migrations from its own image with the database settings
+    documentSelector:
+      path: metadata.name
+      value: tremor-migrate
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: registry.example/tremor-api:sha-a1b2c3d
+      - equal:
+          path: spec.template.spec.containers[0].command
+          value: ["alembic", "upgrade", "head"]
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_HOST
+            value: postgres
+      - equal:
+          path: spec.template.spec.containers[0].env[4].valueFrom.secretKeyRef.name
+          value: postgres-credentials
+  - it: runs as a pre-install and pre-upgrade hook after the database hooks
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-install,pre-upgrade
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "0"
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: before-hook-creation
+  - it: waits for the postgres started by this release revision before migrating
+    release:
+      revision: 7
+    documentSelector:
+      path: metadata.name
+      value: steward-migrate
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: wait-for-postgres
+      - equal:
+          path: spec.template.spec.initContainers[0].image
+          value: registry.example/postgres:17
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].command[2]
+          pattern: psql -h postgres -U prismatic -d prismatic -XAtc 'SHOW prismatic.release_revision'\)" = "7"
+  - it: labels migration pods so the postgres policy admits them
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: migration
+      - equal:
+          path: spec.template.metadata.labels["prismatic.dev/environment"]
+          value: quake-alerts
+  - it: fails fast instead of retrying a broken migration
+    asserts:
+      - equal:
+          path: spec.backoffLimit
+          value: 0
+      - equal:
+          path: spec.template.spec.restartPolicy
+          value: Never
+      - isNotNullOrEmpty:
+          path: spec.activeDeadlineSeconds
+  - it: runs hardened like the services
+    asserts:
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: false
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.initContainers[0].securityContext.readOnlyRootFilesystem
+          value: true
+  - it: uses the priority class when set
+    set:
+      priorityClassName: preview-environment
+    asserts:
+      - equal:
+          path: spec.template.spec.priorityClassName
+          value: preview-environment
+  - it: lets a service override the migration command
+    set:
+      services.steward.migration.command: ["python", "-m", "steward_api.migrate"]
+    documentSelector:
+      path: metadata.name
+      value: steward-migrate
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].command
+          value: ["python", "-m", "steward_api.migrate"]
+  - it: skips services without migrations
+    set:
+      services.steward.migration.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: tremor-migrate
