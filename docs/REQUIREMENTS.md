@@ -410,7 +410,7 @@ Migration path: the chart, golden DB image, E2E suite, CloudEvents contracts and
 
 ## 10. Scope For The 24-Hour Submission
 
-Must ship: FR-1 to FR-5, FR-6.1 to FR-6.3, FR-7.1 and FR-7.2, FR-8.1 and FR-8.2, FR-4.9 teardown, NFR-5.1 to NFR-5.4, the demo, measured timings in the README.
+Must ship: FR-1 to FR-5, FR-6.1 to FR-6.3, FR-7.1 and FR-7.2, FR-8.1 and FR-8.2, FR-4.9 teardown, NFR-5.1 to NFR-5.4, the demo.
 
 Ship if time allows: oauth2-proxy login for preview URLs (Section 4a), ARC runners (fall back to GitHub-hosted runners with OIDC), pre-pull DaemonSet, KEDA schedules, CloudEvents, dashboard, Tilt, sweeper.
 
