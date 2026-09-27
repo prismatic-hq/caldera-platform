@@ -9,7 +9,8 @@ Requirements and decisions live in [REQUIREMENTS.md](REQUIREMENTS.md). This page
   URLs are `https://<service>-<vent>.preview.<domain>`.
 - **Eruption**: a feature group. `feature/<name>` pushed in both service repos shares vent `<name>`.
   A service without that branch runs from `main` in the vent. Any other branch gets vent
-  `<service>-<slug>` with the other service on `main`.
+  `<service>-<slug>` with the other services on `main`. The services in a vent come from the
+  registry `services.yaml` (name, repo, image, port); adding a service is one entry there.
 - **Cooling**: teardown. Deleting a branch (merges fire `delete` too) either redeploys the vent with
   that service on `main`, when the other repo still has the branch, or runs `helm uninstall` and
   deletes the namespace.

@@ -1,12 +1,17 @@
 from caldera_cli.commands import Target, down_commands, image_tag, reset_commands, up_commands
-from caldera_cli.resolver import Action, Service, VentPlan
+from caldera_cli.registry import ServiceSpec
+from caldera_cli.resolver import Action, VentPlan
 
-PLAN = VentPlan(
-    "quake-alerts",
-    Action.UP,
-    {Service.TREMOR: "feature/quake-alerts", Service.STEWARD: "main"},
+SERVICES = (
+    ServiceSpec("tremor", "tremor-api", "tremor-api"),
+    ServiceSpec("steward", "steward-api", "steward-api", 8080),
 )
-SHAS = {Service.TREMOR: "a1b2c3d4e5f6", Service.STEWARD: "0f9e8d7c6b5a"}
+PLAN = VentPlan("quake-alerts", Action.UP, {"tremor": "feature/quake-alerts", "steward": "main"})
+SHAS = {"tremor": "a1b2c3d4e5f6", "steward": "0f9e8d7c6b5a"}
+
+
+def flag_values(command: list[str], flag: str) -> list[str]:
+    return [command[i + 1] for i, arg in enumerate(command) if arg == flag]
 
 
 def test_image_tag_uses_short_sha() -> None:
@@ -14,24 +19,38 @@ def test_image_tag_uses_short_sha() -> None:
 
 
 def test_up_runs_helm_upgrade_install_into_the_vent_namespace() -> None:
-    [command] = up_commands(PLAN, SHAS, "ds-42", Target(registry="123.dkr.ecr.aws"))
+    [command] = up_commands(PLAN, SERVICES, SHAS, "ds-42", Target(registry="123.dkr.ecr.aws"))
 
     assert command[:5] == ["helm", "upgrade", "--install", "vent-quake-alerts", "charts/vent"]
     assert "--create-namespace" in command
     assert "--wait" in command
     assert command[command.index("--namespace") + 1] == "vent-quake-alerts"
-    values = [command[i + 1] for i, arg in enumerate(command) if arg == "--set-string"]
-    assert values == [
+    assert flag_values(command, "--set-string") == [
         "vent.name=quake-alerts",
         "datasetVersion=ds-42",
+        "services.tremor.image.repository=tremor-api",
         "services.tremor.image.tag=sha-a1b2c3d",
+        "services.steward.image.repository=steward-api",
         "services.steward.image.tag=sha-0f9e8d7",
         "image.registry=123.dkr.ecr.aws",
     ]
+    assert flag_values(command, "--set") == [
+        "services.tremor.port=8000",
+        "services.steward.port=8080",
+    ]
+
+
+def test_up_sets_values_for_every_registered_service() -> None:
+    services = (*SERVICES, ServiceSpec("magma", "magma-api", "magma-api"))
+    plan = VentPlan("x", Action.UP, {"tremor": "main", "steward": "main", "magma": "feature/x"})
+
+    [command] = up_commands(plan, services, {**SHAS, "magma": "abcdef0"}, "ds", Target())
+
+    assert "services.magma.image.tag=sha-abcdef0" in flag_values(command, "--set-string")
 
 
 def test_up_passes_the_kube_context_to_helm() -> None:
-    [command] = up_commands(PLAN, SHAS, "ds-42", Target(context="kind-caldera"))
+    [command] = up_commands(PLAN, SERVICES, SHAS, "ds-42", Target(context="kind-caldera"))
 
     assert command[-2:] == ["--kube-context", "kind-caldera"]
 

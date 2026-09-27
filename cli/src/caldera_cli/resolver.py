@@ -1,4 +1,5 @@
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -6,29 +7,6 @@ FEATURE_PREFIX = "feature/"
 DNS_LABEL_MAX = 63
 HELM_RELEASE_MAX = 53
 DNS_LABEL = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
-
-
-class Service(StrEnum):
-    TREMOR = "tremor"
-    STEWARD = "steward"
-
-    @property
-    def repo(self) -> str:
-        return f"{self.value}-api"
-
-    @property
-    def other(self) -> "Service":
-        return Service.STEWARD if self is Service.TREMOR else Service.TREMOR
-
-    @classmethod
-    def from_repo(cls, repo: str) -> "Service":
-        short = repo.rsplit("/", 1)[-1].removesuffix("-api")
-        try:
-            return cls(short)
-        except ValueError as error:
-            raise ValueError(
-                f"unknown service repo {repo!r}; expected tremor-api or steward-api"
-            ) from error
 
 
 class Action(StrEnum):
@@ -44,7 +22,7 @@ class VentNameError(ValueError):
 class VentPlan:
     vent: str
     action: Action
-    refs: dict[Service, str] = field(default_factory=dict)
+    refs: dict[str, str] = field(default_factory=dict)
     joins_existing: bool = False
 
     @property
@@ -60,10 +38,10 @@ def feature_name(branch: str) -> str | None:
     return slug(branch.removeprefix(FEATURE_PREFIX)) if branch.startswith(FEATURE_PREFIX) else None
 
 
-def validate_vent_name(vent: str) -> str:
+def validate_vent_name(vent: str, services: Sequence[str]) -> str:
     if not DNS_LABEL.match(vent):
         raise VentNameError(f"vent name {vent!r} is not a valid DNS label")
-    for service in Service:
+    for service in services:
         label = f"{service}-{vent}"
         if len(label) > DNS_LABEL_MAX:
             raise VentNameError(
@@ -79,36 +57,46 @@ def validate_vent_name(vent: str) -> str:
     return vent
 
 
-def vent_name(service: Service, branch: str) -> str:
+def _require_service(services: Sequence[str], service: str) -> None:
+    if service not in services:
+        raise ValueError(f"unknown service {service!r}; registry has {', '.join(services)}")
+
+
+def vent_name(services: Sequence[str], service: str, branch: str) -> str:
+    _require_service(services, service)
     if branch == "main":
         raise VentNameError("main is the baseline and never gets a vent")
     name = feature_name(branch)
-    return validate_vent_name(name if name is not None else f"{service}-{slug(branch)}")
+    return validate_vent_name(name if name is not None else f"{service}-{slug(branch)}", services)
 
 
 def resolve_push(
-    service: Service,
+    services: Sequence[str],
+    pushed: str,
     branch: str,
-    other_has_branch: bool,
+    sharing: frozenset[str],
     existing_vents: frozenset[str] = frozenset(),
 ) -> VentPlan:
-    vent = vent_name(service, branch)
-    shared = feature_name(branch) is not None and other_has_branch
+    vent = vent_name(services, pushed, branch)
+    shared = sharing if feature_name(branch) is not None else frozenset()
     return VentPlan(
         vent=vent,
         action=Action.UP,
-        refs={service: branch, service.other: branch if shared else "main"},
+        refs={name: branch if name == pushed or name in shared else "main" for name in services},
         joins_existing=vent in existing_vents,
     )
 
 
-def resolve_delete(service: Service, branch: str, other_has_branch: bool) -> VentPlan:
-    vent = vent_name(service, branch)
-    if feature_name(branch) is not None and other_has_branch:
-        return VentPlan(
-            vent=vent,
-            action=Action.UP,
-            refs={service: "main", service.other: branch},
-            joins_existing=True,
-        )
-    return VentPlan(vent=vent, action=Action.DOWN)
+def resolve_delete(
+    services: Sequence[str], deleted: str, branch: str, sharing: frozenset[str]
+) -> VentPlan:
+    vent = vent_name(services, deleted, branch)
+    remaining = sharing - {deleted} if feature_name(branch) is not None else frozenset()
+    if not remaining:
+        return VentPlan(vent=vent, action=Action.DOWN)
+    return VentPlan(
+        vent=vent,
+        action=Action.UP,
+        refs={name: branch if name in remaining else "main" for name in services},
+        joins_existing=True,
+    )
