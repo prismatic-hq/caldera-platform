@@ -1,4 +1,6 @@
 suite: service deployments
+values:
+  - ../ci/default-values.yaml
 templates:
   - templates/services.yaml
 set:
@@ -35,3 +37,31 @@ tests:
       - equal:
           path: metadata.labels["app.kubernetes.io/part-of"]
           value: vent
+  - it: renders every service in the values, not a fixed list
+    set:
+      services.magma.image.repository: magma-api
+      services.magma.image.tag: sha-0f9e8d7
+    asserts:
+      - hasDocuments:
+          count: 6
+  - it: applies serviceDefaults and lets a service override its port
+    set:
+      services.steward.port: 8080
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: metadata.name
+          value: steward
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].containerPort
+          value: 8080
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 100m
+  - it: rejects a service name that is not a DNS label
+    set:
+      services.Magma.image.repository: magma-api
+      services.Magma.image.tag: main
+    asserts:
+      - failedTemplate:
+          errorPattern: does not match pattern
