@@ -1,6 +1,7 @@
 import json
 from dataclasses import dataclass
 
+from preview_cli.access import ENVIRONMENT_KIND_LABEL
 from preview_cli.registry import ServiceSpec
 from preview_cli.resolver import PreviewPlan
 
@@ -92,13 +93,18 @@ def up_commands(
 
 def list_environments_command(target: Target) -> Command:
     return [
-        "helm",
-        "list",
-        "--all-namespaces",
-        "--short",
-        "--filter",
-        "^preview-",
-    ] + _helm_context(target)
+        "kubectl",
+        "get",
+        "namespaces",
+        "--selector",
+        f"{ENVIRONMENT_KIND_LABEL}=preview",
+        "--output",
+        "jsonpath={.items[*].metadata.name}",
+    ] + _kubectl_context(target)
+
+
+def apply_command(target: Target) -> Command:
+    return ["kubectl", "apply", "--filename", "-"] + _kubectl_context(target)
 
 
 def down_commands(environment: str, target: Target) -> list[Command]:

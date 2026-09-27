@@ -127,7 +127,8 @@ def test_up_dry_run_prints_helm_command() -> None:
     )
 
     assert code == 0
-    build, upgrade, _summary, _timings = output.splitlines()
+    apply, build, upgrade, _summary, _timings = output.splitlines()
+    assert apply == "kubectl apply --filename -"
     assert build == "helm dependency build charts/services"
     assert upgrade.startswith("helm upgrade --install preview-quake-alerts charts/services")
     assert "services.steward.image.tag=sha-0f9e8d7" in output
@@ -373,10 +374,13 @@ def test_up_reuses_the_current_image_and_clears_a_pending_release(
         "config": {"services": {"tremor": {"image": {"tag": "sha-9999999@sha256:9"}}}},
     }
     calls: list[list[str]] = []
+    applied: list[str] = []
 
     def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess:
         calls.append(command)
-        stdout = {"list": "preview-quake-alerts\n", "status": json.dumps(status)}.get(
+        if command[1] == "apply":
+            applied.append(str(kwargs["input"]))
+        stdout = {"get": "preview-quake-alerts preview-other", "status": json.dumps(status)}.get(
             command[1], ""
         )
         return subprocess.CompletedProcess(command, 0, stdout, "")
@@ -386,7 +390,16 @@ def test_up_reuses_the_current_image_and_clears_a_pending_release(
     code, output = invoke(*UP_ARGS)
 
     assert code == 0, output
-    assert [c[1] for c in calls] == ["list", "status", "rollback", "dependency", "upgrade"]
+    assert [c[1] for c in calls] == [
+        "get",
+        "apply",
+        "status",
+        "rollback",
+        "dependency",
+        "upgrade",
+    ]
+    assert "kind: RoleBinding" in applied[0]
+    assert "name: preview-quake-alerts" in applied[0]
     assert "services.tremor.image.tag=sha-9999999@sha256:9" in calls[-1]
     assert json_line(output, "images")["images"]["tremor"]["source"] == "current"
 
@@ -428,7 +441,13 @@ def test_up_publishes_stage_timings(aws, tmp_path: Path) -> None:
     timings = json_line(result.output, "timings")["timings"]
     assert timings["command"] == "up"
     assert timings["environment"] == "quake-alerts"
-    assert list(timings["stages"]) == ["resolve", "images", "chart_dependencies", "helm_upgrade"]
+    assert list(timings["stages"]) == [
+        "resolve",
+        "namespace",
+        "images",
+        "chart_dependencies",
+        "helm_upgrade",
+    ]
     outputs = github_output.read_text().splitlines()
     assert json.loads(next(o for o in outputs if o.startswith("timings="))[8:]) == timings
     assert step_summary.read_text().startswith("### preview env up quake-alerts")

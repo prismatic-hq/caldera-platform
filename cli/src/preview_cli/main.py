@@ -9,13 +9,16 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+import yaml
 from botocore.exceptions import BotoCoreError, ClientError
 
+from preview_cli.access import namespace_manifests
 from preview_cli.aws import Ecr, Parameters
 from preview_cli.commands import (
     Command,
     DeployedRelease,
     Target,
+    apply_command,
     down_commands,
     helm_test_commands,
     list_environments_command,
@@ -181,24 +184,28 @@ def _shas(
 def _existing_environments(target: Target, dry_run: bool) -> frozenset[str]:
     if dry_run:
         return frozenset()
-    releases = subprocess.run(
+    namespaces = subprocess.run(
         list_environments_command(target), check=True, capture_output=True, text=True
     ).stdout.split()
-    return frozenset(release.removeprefix("preview-") for release in releases)
+    return frozenset(namespace.removeprefix("preview-") for namespace in namespaces)
+
+
+def _execute(command: Command, dry_run: bool, stdin: str | None = None) -> None:
+    typer.echo(shlex.join(command))
+    if dry_run:
+        return
+    try:
+        subprocess.run(command, input=stdin, text=True, check=True)
+    except subprocess.CalledProcessError as error:
+        typer.echo(
+            f"error: {shlex.join(command)} failed with exit code {error.returncode}", err=True
+        )
+        raise typer.Exit(code=error.returncode) from error
 
 
 def _run(commands: list[Command], dry_run: bool) -> None:
     for command in commands:
-        typer.echo(shlex.join(command))
-        if dry_run:
-            continue
-        try:
-            subprocess.run(command, check=True)
-        except subprocess.CalledProcessError as error:
-            typer.echo(
-                f"error: {shlex.join(command)} failed with exit code {error.returncode}", err=True
-            )
-            raise typer.Exit(code=error.returncode) from error
+        _execute(command, dry_run)
 
 
 @contextmanager
@@ -216,6 +223,10 @@ def _publish_timings(record: dict, report: Report) -> None:
     if report.step_summary is not None:
         with report.step_summary.open("a") as file:
             file.write(summary_markdown(record))
+
+
+def _apply(documents: list[dict], target: Target, dry_run: bool) -> None:
+    _execute(apply_command(target), dry_run, yaml.safe_dump_all(documents))
 
 
 def _deployed_release(plan: PreviewPlan, target: Target, dry_run: bool) -> DeployedRelease | None:
@@ -287,6 +298,8 @@ def _deploy(
     stopwatch: Stopwatch,
     pushed: str | None = None,
 ) -> None:
+    with stopwatch.stage("namespace"):
+        _apply(namespace_manifests(plan.environment), target, options.dry_run)
     with stopwatch.stage("images"):
         ecr = None if options.offline else _ecr()
         parameters = None if options.offline else _parameters()

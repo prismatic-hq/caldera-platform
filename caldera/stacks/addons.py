@@ -6,7 +6,7 @@ from aws_cdk import aws_eks_v2 as eks
 from aws_cdk import aws_iam as iam
 from constructs import Construct, IConstruct
 
-from caldera import charts
+from caldera import charts, runner_access
 from caldera.config import (
     GITHUB_APP_KEYS,
     REPO_ROOT,
@@ -387,7 +387,7 @@ class AddonsStack(Stack):
             "kind": "ServiceAccount",
             "metadata": {"name": RUNNER_SERVICE_ACCOUNT, "namespace": RUNNER_NAMESPACE},
         }
-        rbac = self._runner_rbac()
+        rbac = runner_access.manifests()
         access = self._manifest(
             "RunnerAccess", namespace, service_account, github_app, *rbac, after=[parameter_store]
         )
@@ -411,78 +411,6 @@ class AddonsStack(Stack):
                 after=[controller, access],
                 release=runner_scale_set(repo),
             )
-
-    @staticmethod
-    def _runner_rbac() -> list[dict]:
-        """In-cluster credentials for `preview env up|down|reset` run by the runners."""
-        rules = [
-            {
-                "apiGroups": [""],
-                "resources": ["namespaces"],
-                "verbs": ["get", "list", "watch", "create", "delete", "patch"],
-            },
-            {
-                "apiGroups": [
-                    "",
-                    "apps",
-                    "batch",
-                    "networking.k8s.io",
-                    "gateway.networking.k8s.io",
-                    "cilium.io",
-                ],
-                "resources": [
-                    "pods",
-                    "pods/log",
-                    "services",
-                    "secrets",
-                    "configmaps",
-                    "serviceaccounts",
-                    "events",
-                    "deployments",
-                    "statefulsets",
-                    "replicasets",
-                    "jobs",
-                    "networkpolicies",
-                    "httproutes",
-                    "ciliumnetworkpolicies",
-                ],
-                "verbs": [
-                    "get",
-                    "list",
-                    "watch",
-                    "create",
-                    "update",
-                    "patch",
-                    "delete",
-                    "deletecollection",
-                ],
-            },
-        ]
-        return [
-            {
-                "apiVersion": "rbac.authorization.k8s.io/v1",
-                "kind": "ClusterRole",
-                "metadata": {"name": "preview-deployer"},
-                "rules": rules,
-            },
-            {
-                "apiVersion": "rbac.authorization.k8s.io/v1",
-                "kind": "ClusterRoleBinding",
-                "metadata": {"name": "preview-deployer"},
-                "roleRef": {
-                    "apiGroup": "rbac.authorization.k8s.io",
-                    "kind": "ClusterRole",
-                    "name": "preview-deployer",
-                },
-                "subjects": [
-                    {
-                        "kind": "ServiceAccount",
-                        "name": RUNNER_SERVICE_ACCOUNT,
-                        "namespace": RUNNER_NAMESPACE,
-                    }
-                ],
-            },
-        ]
 
     def _drainer(self, network: NetworkStack, gateway: IConstruct) -> None:
         name = self.config.cluster_name
