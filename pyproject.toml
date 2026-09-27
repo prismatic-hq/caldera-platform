@@ -42,9 +42,16 @@ extend-exclude = ["cdk.out"]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["caldera", "preview_cli", "golden_seeder"]
+known-first-party = [
+    "caldera",
+    "preview_cli",
+    "golden_seeder",
+    "cfn",
+    "network_sweeper",
+    "zone_sweeper",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "cli/tests", "seeder/tests", "e2e"]
 addopts = "-ra --import-mode=importlib"
-pythonpath = ["."]
+pythonpath = [".", "caldera/handlers"]
