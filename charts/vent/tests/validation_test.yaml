@@ -1,8 +1,12 @@
 suite: vent name validation
+values:
+  - ../ci/default-values.yaml
 templates:
   - templates/services.yaml
 tests:
   - it: fails when the vent name is missing
+    set:
+      vent.name: ""
     asserts:
       - failedTemplate:
           errorPattern: vent.name is required

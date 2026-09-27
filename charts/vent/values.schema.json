@@ -1,85 +1,195 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": ["vent", "datasetVersion", "domain", "gateway", "image", "services", "postgres"],
+  "required": [
+    "vent",
+    "datasetVersion",
+    "domain",
+    "gateway",
+    "image",
+    "services",
+    "postgres",
+    "serviceDefaults"
+  ],
   "definitions": {
     "image": {
       "type": "object",
-      "required": ["repository", "tag"],
+      "required": [
+        "repository",
+        "tag"
+      ],
       "additionalProperties": false,
       "properties": {
-        "repository": { "type": "string", "minLength": 1 },
-        "tag": { "type": "string" }
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string"
+        }
       }
     },
     "resources": {
       "type": "object",
-      "required": ["requests", "limits"],
+      "required": [
+        "requests",
+        "limits"
+      ],
       "properties": {
-        "requests": { "type": "object" },
-        "limits": { "type": "object" }
+        "requests": {
+          "type": "object"
+        },
+        "limits": {
+          "type": "object"
+        }
       }
     },
     "service": {
       "type": "object",
-      "required": ["image", "port", "resources"],
+      "required": [
+        "image"
+      ],
       "additionalProperties": false,
       "properties": {
-        "image": { "$ref": "#/definitions/image" },
-        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
-        "resources": { "$ref": "#/definitions/resources" }
+        "image": {
+          "$ref": "#/definitions/image"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        }
       }
     }
   },
   "properties": {
     "vent": {
       "type": "object",
-      "required": ["name"],
-      "additionalProperties": false,
-      "properties": { "name": { "type": "string" } }
-    },
-    "datasetVersion": { "type": "string", "minLength": 1 },
-    "domain": { "type": "string", "minLength": 1 },
-    "priorityClassName": { "type": "string" },
-    "gateway": {
-      "type": "object",
-      "required": ["name", "namespace", "sectionName"],
+      "required": [
+        "name"
+      ],
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
-        "namespace": { "type": "string", "minLength": 1 },
-        "sectionName": { "type": "string", "minLength": 1 }
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "datasetVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "domain": {
+      "type": "string",
+      "minLength": 1
+    },
+    "priorityClassName": {
+      "type": "string"
+    },
+    "gateway": {
+      "type": "object",
+      "required": [
+        "name",
+        "namespace",
+        "sectionName"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sectionName": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "image": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "registry": { "type": "string" },
-        "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+        "registry": {
+          "type": "string"
+        },
+        "pullPolicy": {
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
       }
     },
     "services": {
       "type": "object",
-      "required": ["tremor", "steward"],
-      "additionalProperties": false,
-      "properties": {
-        "tremor": { "$ref": "#/definitions/service" },
-        "steward": { "$ref": "#/definitions/service" }
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/service"
       }
     },
     "postgres": {
       "type": "object",
-      "required": ["image", "database", "user", "uid", "resources"],
+      "required": [
+        "image",
+        "database",
+        "user",
+        "uid",
+        "resources"
+      ],
       "additionalProperties": false,
       "properties": {
-        "image": { "$ref": "#/definitions/image" },
-        "database": { "type": "string", "minLength": 1 },
-        "user": { "type": "string", "minLength": 1 },
-        "uid": { "type": "integer", "minimum": 1 },
-        "memoryBacked": { "type": "boolean" },
-        "sizeLimit": { "type": "string" },
-        "resources": { "$ref": "#/definitions/resources" }
+        "image": {
+          "$ref": "#/definitions/image"
+        },
+        "database": {
+          "type": "string",
+          "minLength": 1
+        },
+        "user": {
+          "type": "string",
+          "minLength": 1
+        },
+        "uid": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "memoryBacked": {
+          "type": "boolean"
+        },
+        "sizeLimit": {
+          "type": "string"
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        }
+      }
+    },
+    "serviceDefaults": {
+      "type": "object",
+      "required": [
+        "port",
+        "resources"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        }
       }
     }
   }
