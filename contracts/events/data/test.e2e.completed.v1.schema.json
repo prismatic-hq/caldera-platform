@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/prismatic-hq/caldera-platform/blob/main/contracts/events/data/test.e2e.completed.v1.schema.json",
+  "title": "test.e2e.completed.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "vent",
+    "result",
+    "passed",
+    "failed",
+    "durationSeconds"
+  ],
+  "properties": {
+    "vent": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 48
+    },
+    "result": {
+      "enum": [
+        "passed",
+        "failed"
+      ]
+    },
+    "passed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "failed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "durationSeconds": {
+      "type": "number",
+      "minimum": 0
+    }
+  }
+}

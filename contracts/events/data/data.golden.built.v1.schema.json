@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/prismatic-hq/caldera-platform/blob/main/contracts/events/data/data.golden.built.v1.schema.json",
+  "title": "data.golden.built.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "datasetVersion",
+    "image",
+    "seederDigest",
+    "alembicHeads",
+    "checksums"
+  ],
+  "properties": {
+    "datasetVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "image": {
+      "type": "string",
+      "minLength": 1
+    },
+    "seederDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "alembicHeads": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tremor",
+        "steward"
+      ],
+      "properties": {
+        "tremor": {
+          "type": "string"
+        },
+        "steward": {
+          "type": "string"
+        }
+      }
+    },
+    "checksums": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "compressedBytes": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}
