@@ -17,6 +17,10 @@ on:
         description: caldera-platform ref that provides the CLI and chart
         type: string
         default: main
+      optimistic:
+        description: Deploy before the image build; the build-gated deploy then waits on the Lease instead of cancelling it
+        type: boolean
+        default: false
     secrets:
       CALDERA_APP_CLIENT_ID:
         description: Client ID of the GitHub App that can read caldera-platform and both service repos
@@ -41,8 +45,8 @@ jobs:
     if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
     runs-on: ${{ github.event.repository.name }}-runners
     concurrency:
-      group: preview-${{ inputs.repo }}-${{ inputs.branch }}
-      cancel-in-progress: true
+      group: preview-${{ inputs.optimistic && 'optimistic-' || '' }}${{ inputs.repo }}-${{ inputs.branch }}
+      cancel-in-progress: ${{ !inputs.optimistic }}
     env:
       UV_NO_SYNC: "1"
     steps:

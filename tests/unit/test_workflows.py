@@ -106,9 +106,22 @@ def test_deploys_and_teardowns_of_one_branch_share_a_concurrency_group() -> None
     up = jobs("preview-environment.yml")["up"]["concurrency"]
     down = jobs("preview-environment-teardown.yml")["down"]["concurrency"]
 
-    assert up["group"] == down["group"] == "preview-${{ inputs.repo }}-${{ inputs.branch }}"
-    assert up["cancel-in-progress"] is True
+    assert down["group"] == "preview-${{ inputs.repo }}-${{ inputs.branch }}"
+    assert up["group"] == (
+        "preview-${{ inputs.optimistic && 'optimistic-' || '' }}"
+        "${{ inputs.repo }}-${{ inputs.branch }}"
+    )
     assert down["cancel-in-progress"] is False
+
+
+def test_optimistic_deploys_are_never_cancelled_by_the_build_gated_deploy() -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "preview-environment.yml").read_text())
+    optimistic = workflow[True]["workflow_call"]["inputs"]["optimistic"]
+
+    assert optimistic == {**optimistic, "type": "boolean", "default": False}
+    assert (
+        workflow["jobs"]["up"]["concurrency"]["cancel-in-progress"] == "${{ !inputs.optimistic }}"
+    )
 
 
 @pytest.mark.parametrize("workflow", PREVIEW_WORKFLOWS)
