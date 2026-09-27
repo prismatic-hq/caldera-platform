@@ -1,0 +1,96 @@
+[tools]
+python = "3.12"
+uv = "0.12.19"
+node = "24"
+aws-cli = "2.37.4"
+1password = "2.39.0"
+"github:cli/cli" = "2.101.0"
+kubectl = "1.35.0"
+helm = "4.3.0"
+jq = "1.8.2"
+kind = "0.33.0"
+tilt = "0.37.7"
+
+[vars]
+rendered = ".rendered"
+cilium_version = "1.20.2"
+keda_version = "2.21.0"
+helm_unittest_image = "helmunittest/helm-unittest:4.2.3-1.1.2"
+ct_image = "quay.io/helmpack/chart-testing:v3.14.0"
+kubeconform_image = "ghcr.io/yannh/kubeconform:v0.8.0"
+trivy_image = "aquasec/trivy:0.74.0"
+
+[tasks.init]
+description = "Install Python dependencies and git hooks"
+run = ["uv sync --locked", "uv run pre-commit install"]
+
+[tasks.test]
+description = "Run pytest and the helm chart checks (helm unittest, ct lint, kubeconform, trivy)"
+run = ["uv run pytest", "mise run chart:test"]
+
+[tasks.synth]
+description = "cdk synth with cdk-nag AwsSolutionsChecks, e.g. ENV=sandbox.yaml mise run synth"
+run = "npx --yes aws-cdk@2 synth --quiet ${ENV:+-c env=$ENV}"
+
+[tasks.bootstrap]
+description = "One-time cdk bootstrap of the target account and region"
+run = "npx --yes aws-cdk@2 bootstrap"
+
+[tasks.deploy]
+description = "Deploy every stack, e.g. ENV=sandbox.yaml mise run deploy; pass cdk arguments after --"
+run = "npx --yes aws-cdk@2 deploy --all ${ENV:+-c env=$ENV}"
+
+[tasks.destroy]
+description = "Destroy every stack, then fail if any platform resource remains"
+usage = 'arg "[args]" var=#true help="Extra cdk destroy arguments"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+eval "args=(${usage_args:-})"
+npx --yes aws-cdk@2 destroy --all --force ${ENV:+-c env=$ENV} ${args[@]+"${args[@]}"}
+mise run verify:clean
+'''
+
+[tasks."secrets:put"]
+description = "Write the GitHub App credentials for the ARC runners to SSM Parameter Store"
+run = "uv run python -m scripts.put_secrets"
+
+[tasks."kube:connect"]
+description = "Tunnel to the private EKS API and set kubectl context caldera (runs until Ctrl-C)"
+raw = true
+run = "uv run python -m scripts.kube_connect"
+
+[tasks."chart:render"]
+hide = true
+run = "uv run python scripts/render_charts.py --out {{vars.rendered}}"
+
+[tasks."chart:test"]
+hide = true
+run = [
+  "uv run python scripts/render_charts.py --dependencies-only",
+  'docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/apps" {{vars.helm_unittest_image}} charts/*',
+  '''common="$(cd "$(git rev-parse --git-common-dir)" && pwd)" && docker run --rm -v "$common:$common" -v "$PWD:$PWD" -w "$PWD" {{vars.ct_image}} sh -c 'git config --global --add safe.directory "*" && ct lint --all --chart-dirs charts --target-branch main' ''',
+  "mise run chart:render",
+  'docker run --rm -v "$PWD/{{vars.rendered}}:/r" {{vars.kubeconform_image}} -strict -summary -ignore-missing-schemas /r',
+  'docker run --rm -v "$PWD/{{vars.rendered}}:/r" {{vars.trivy_image}} config --exit-code 1 /r',
+]
+
+[tasks."local:up"]
+description = "kind cluster with Cilium, KEDA and platform/ applied"
+run = [
+  "kind create cluster --config local/kind-config.yaml",
+  "helm repo add cilium https://helm.cilium.io --force-update",
+  "helm repo add kedacore https://kedacore.github.io/charts --force-update",
+  "helm upgrade --install cilium cilium/cilium --version {{vars.cilium_version}} --kube-context kind-caldera -n kube-system -f local/cilium-values.yaml --wait",
+  "helm upgrade --install keda kedacore/keda --version {{vars.keda_version}} --kube-context kind-caldera -n keda --create-namespace --wait",
+  "kubectl --context kind-caldera apply -f platform/namespace.yaml",
+  "kubectl --context kind-caldera apply -f platform/",
+]
+
+[tasks."local:down"]
+description = "Delete the kind cluster"
+run = "kind delete cluster --name caldera"
+
+[tasks."verify:clean"]
+description = "Fail if AWS resources from the platform remain after cdk destroy"
+run = "uv run python scripts/verify_clean.py"

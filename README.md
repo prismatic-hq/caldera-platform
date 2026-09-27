@@ -25,29 +25,29 @@ Docs: [REQUIREMENTS.md](docs/REQUIREMENTS.md), [ARCHITECTURE.md](docs/ARCHITECTU
 
 ## Quick Start
 
-Requires `uv`, `task`, Docker, Helm and Node.js.
+Requires Python 3 and Docker; `setup.py` installs mise and every other tool ([DEVELOPMENT.md](docs/DEVELOPMENT.md)).
 
 ```sh
-task init && task test
+python3 setup.py    # then, with mise on PATH: mise run test
 ```
 
 ## Key Commands
 
 | Command | What it does |
 |---|---|
-| `task test` | pytest, helm unittest, ct lint, kubeconform, trivy config |
-| `task synth ENV=sandbox.yaml` | `cdk synth` with cdk-nag `AwsSolutionsChecks` |
-| `task bootstrap` | One-time `cdk bootstrap` of the account and region |
-| `task deploy ENV=sandbox.yaml` | Deploy every stack with `deploy/environments/sandbox.yaml` |
-| `task secrets:put -- --app-id ... --installation-id ... --private-key-file app.pem` | GitHub App credentials to SSM for the runners |
-| `task destroy` | Destroy every stack, then `task verify:clean` |
-| `task local:up` / `task local:down` | kind cluster with Cilium, KEDA and `platform/` |
+| `mise run test` | pytest, helm unittest, ct lint, kubeconform, trivy config |
+| `ENV=sandbox.yaml mise run synth` | `cdk synth` with cdk-nag `AwsSolutionsChecks` |
+| `mise run bootstrap` | One-time `cdk bootstrap` of the account and region |
+| `ENV=sandbox.yaml mise run deploy` | Deploy every stack with `deploy/environments/sandbox.yaml` |
+| `mise run secrets:put -- --app-id ... --installation-id ... --private-key-file app.pem` | GitHub App credentials to SSM for the runners |
+| `mise run destroy` | Destroy every stack, then `mise run verify:clean` |
+| `mise run local:up` / `mise run local:down` | kind cluster with Cilium, KEDA and `platform/` |
 | `uv run preview env up ... --dry-run` | Print the Helm command for a preview environment |
 
 ## Deploy
 
 Settings live in `deploy/environments/<name>.yaml`, keyed like CDK context: `domain` (required),
 `natGateways` (1 or 2), `budgetEmail` and `acmeEmail` (default `platform@<domain>`),
-`previewAllowlistCidrs`. `-c key=value` overrides the file. Run `task bootstrap`,
-`task deploy ENV=<name>.yaml` and `task secrets:put` ([GitHub App setup](docs/GITHUB_APP.md)),
+`previewAllowlistCidrs`. `-c key=value` overrides the file. Run `mise run bootstrap`,
+`ENV=<name>.yaml mise run deploy` and `mise run secrets:put` ([GitHub App setup](docs/GITHUB_APP.md)),
 then point the domain's NS records at the new hosted zone.

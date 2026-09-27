@@ -142,7 +142,7 @@ Optimistic start: on push, the workflow creates the preview environment with the
 ### FR-10 Local development
 | ID | Requirement |
 |---|---|
-| FR-10.1 | `task local:up` creates a kind cluster with its default CNI disabled and Cilium installed, plus the same `services` chart, golden DB image and PriorityClasses, so network policies and the isolation test behave the same locally and in CI. |
+| FR-10.1 | `mise run local:up` creates a kind cluster with its default CNI disabled and Cilium installed, plus the same `services` chart, golden DB image and PriorityClasses, so network policies and the isolation test behave the same locally and in CI. |
 | FR-10.2 | `preview env up --context kind-caldera` runs the full preview environment lifecycle locally, including feature-group resolution against local branches. |
 | FR-10.3 | Tilt provides the inner loop: code changes sync into the running pod and FastAPI reloads in seconds, without an image rebuild. |
 | FR-10.4 | CI runs the chart on kind (`ct install`) on every chart change, using the same commands. |
@@ -238,7 +238,7 @@ Mechanism:
 1. **Drainer** (custom resource in `AddonsStack`, depends on every addon chart and the cluster). CloudFormation deletes dependents first, so the drainer's Delete handler runs while all controllers are still alive. It deletes preview environment namespaces, the Gateway and the Envoy proxy Service, PVCs, then Karpenter NodePools and NodeClaims, and waits until the NLB, target groups, Karpenter instances and external-dns records are gone (timeout 20 minutes, clear error naming what is left).
 2. **Sweeper** (custom resource in `NetworkStack`, depends on the VPC, so it is deleted before the VPC and after every other stack). Its Delete handler removes anything still tagged for the cluster (`elbv2.k8s.aws/cluster`, `karpenter.sh/discovery`, `kubernetes.io/cluster/<name>`): load balancers, target groups, security groups, instances, launch templates, `available` ENIs. A matching sweeper in `DnsStack` empties the hosted zone of non-SOA/NS records, and the `NetworkStack` sweeper deletes SSM parameters under `/prismatic/`.
 3. **CDK removal policies**: `RemovalPolicy.DESTROY` on everything; ECR repos with `emptyOnDelete: true`; no Secrets Manager secrets (nothing pending deletion to collide with on redeploy); AWS-managed KMS keys (customer keys cannot be deleted immediately).
-4. **Verification**: `task verify:clean` (Python, boto3) lists any resource carrying `prismatic:*` or the cluster tags across EC2, ELB, Route 53, ECR, CloudWatch Logs and EKS, and exits non-zero if anything remains. Run it after every destroy.
+4. **Verification**: `mise run verify:clean` (Python, boto3) lists any resource carrying `prismatic:*` or the cluster tags across EC2, ELB, Route 53, ECR, CloudWatch Logs and EKS, and exits non-zero if anything remains. Run it after every destroy.
 
 What stays by design: the `CDKToolkit` bootstrap stack and its bucket (not part of this app). Re-creating the hosted zone assigns new name servers, so the domain's delegation must be updated after every fresh deploy.
 
@@ -261,7 +261,7 @@ Expected `AwsSolutionsChecks` findings for this design and how each is resolved:
 | IAM5 | Wildcards in Karpenter, Load Balancer Controller, Cilium operator, external-dns, cert-manager, drainer/sweeper and CI policies | Fix: resource ARNs, `aws:ResourceTag` and `aws:RequestTag` conditions, the hosted zone ARN for DNS actions. Actions that AWS documents as not supporting resource-level permissions (for example `ec2:Describe*`, `ecr:GetAuthorizationToken`, `route53:ListHostedZones`) must use `Resource: *`; these exact actions are suppressed per the policy below |
 | L1 | Lambda not on the latest runtime | Fix: drainer and sweeper on the latest Python runtime; keep CDK current so its provider Lambdas are too |
 | SQS3, SQS4 | Karpenter interruption queue without DLQ or SSL enforcement | Fix: DLQ and `enforceSSL: true` |
-| SMG4 | Secrets Manager secrets without rotation | Fix by design: the platform creates no Secrets Manager secrets. Generated secrets (per-environment Postgres passwords, oauth2-proxy cookie secret) are created in-cluster by the External Secrets `Password` generator and never leave the cluster. Externally issued secrets (GitHub App private key, GitHub OAuth client secret) are SSM Parameter Store `SecureString` values under `/prismatic/`, written by `task secrets:put` and read by External Secrets |
+| SMG4 | Secrets Manager secrets without rotation | Fix by design: the platform creates no Secrets Manager secrets. Generated secrets (per-environment Postgres passwords, oauth2-proxy cookie secret) are created in-cluster by the External Secrets `Password` generator and never leave the cluster. Externally issued secrets (GitHub App private key, GitHub OAuth client secret) are SSM Parameter Store `SecureString` values under `/prismatic/`, written by `mise run secrets:put` and read by External Secrets |
 | S1, S2, S10 | Any S3 bucket without access logs, public access block or SSL-only | Fix: block public access and `enforceSSL` on every bucket; avoid buckets where a log group works |
 | EC26 and related | Unencrypted EBS on nodes | Fix: encrypted gp3 root volumes in the managed node group launch template and the Karpenter `EC2NodeClass`; IMDSv2 required on both |
 
@@ -316,7 +316,7 @@ Not installed (roadmap, Section 9): Argo CD, Kargo, Argo Rollouts, Istio, Crossp
 | NFR-5.4 | Security | Preview environment namespaces have no cloud permissions | No Pod Identity associations in `preview-*` namespaces |
 | NFR-5.5 | Security | Synthetic data only | FR-5.6, FR-6.1 |
 | NFR-6.1 | Reliability | Teardown never leaks | All preview environment resources in one namespace; sweeper reports stray namespaces |
-| NFR-6.3 | Cost | Platform teardown leaves nothing billing | `cdk destroy --all --force` succeeds in one run and `task verify:clean` reports zero leftover resources (Section 4b) |
+| NFR-6.3 | Cost | Platform teardown leaves nothing billing | `cdk destroy --all --force` succeeds in one run and `mise run verify:clean` reports zero leftover resources (Section 4b) |
 | NFR-6.2 | Reliability | Spot interruption | Preview environment pods reschedule and the database resets to golden; acceptable for previews |
 | NFR-7.1 | Developer experience | Developers need no AWS or kubectl access to use preview environments | Push a branch, read URLs, timings and E2E result on the PR |
 | NFR-7.2 | Developer experience | Same commands everywhere | `preview` CLI identical in CI, on a laptop against EKS, and on kind |
@@ -432,4 +432,4 @@ Written up only: Section 9.
 10. Cilium and Envoy Gateway together: disable Cilium's Gateway API and Ingress controllers so only Envoy Gateway programs `Gateway` resources, and confirm proxy protocol v2 end to end (NLB target group attribute + `ClientTrafficPolicy`) before enabling the optional IP allowlist.
 11. Previews are open by default. If oauth2-proxy does not ship, preview URLs are public for the demo; the golden dataset must stay free of anything sensitive, and the locked-down mode is one value flip away.
 12. Private EKS endpoint (EKS1) means only in-VPC callers reach the API: ARC runners and the CDK kubectl handler work; the GitHub-hosted runner fallback in Section 10 and laptop `preview env up` against EKS need SSM port forwarding. If ARC slips, either accept EKS1 as a documented risk for the demo or run deploy jobs through SSM.
-13. SSM `SecureString` parameters cannot be created by CloudFormation, so `task secrets:put` writes them; the sweeper deletes everything under `/prismatic/` on destroy, so they must be written again after each fresh deploy.
+13. SSM `SecureString` parameters cannot be created by CloudFormation, so `mise run secrets:put` writes them; the sweeper deletes everything under `/prismatic/` on destroy, so they must be written again after each fresh deploy.
