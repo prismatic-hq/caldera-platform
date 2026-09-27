@@ -5,17 +5,17 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "vent",
+    "environment",
     "result",
     "passed",
     "failed",
     "durationSeconds"
   ],
   "properties": {
-    "vent": {
+    "environment": {
       "type": "string",
       "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
-      "maxLength": 48
+      "maxLength": 45
     },
     "result": {
       "enum": [

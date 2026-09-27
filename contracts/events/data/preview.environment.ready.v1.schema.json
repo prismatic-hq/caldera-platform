@@ -1,28 +1,26 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/prismatic-hq/caldera-platform/blob/main/contracts/events/data/vent.environment.failed.v1.schema.json",
-  "title": "vent.environment.failed.v1",
+  "$id": "https://github.com/prismatic-hq/caldera-platform/blob/main/contracts/events/data/preview.environment.ready.v1.schema.json",
+  "title": "preview.environment.ready.v1",
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "vent",
-    "stage",
-    "reason",
+    "environment",
+    "urls",
     "timings"
   ],
   "properties": {
-    "vent": {
+    "environment": {
       "type": "string",
       "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
-      "maxLength": 48
+      "maxLength": 45
     },
-    "stage": {
-      "type": "string",
-      "minLength": 1
-    },
-    "reason": {
-      "type": "string",
-      "minLength": 1
+    "urls": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "format": "uri"
+      }
     },
     "timings": {
       "type": "object",
