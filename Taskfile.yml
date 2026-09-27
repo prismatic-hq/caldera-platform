@@ -1,49 +1,77 @@
 version: "3"
 
+vars:
+  RENDERED: .rendered
+  CILIUM_VERSION: 1.20.2
+  KEDA_VERSION: 2.21.0
+  HELM_UNITTEST_IMAGE: helmunittest/helm-unittest:4.2.3-1.1.2
+  CT_IMAGE: quay.io/helmpack/chart-testing:v3.14.0
+  KUBECONFORM_IMAGE: ghcr.io/yannh/kubeconform:v0.8.0
+  TRIVY_IMAGE: aquasec/trivy:0.74.0
+  GIT_COMMON_DIR:
+    sh: cd "$(git rev-parse --git-common-dir)" && pwd
+
 tasks:
   init:
     desc: Install dependencies and git hooks
     cmds:
       - uv sync --locked
-      - uv sync --locked --directory seeder
       - uv run pre-commit install
 
-  lint:
-    desc: Lint and check formatting
-    cmds:
-      - uv run ruff check .
-      - uv run ruff format --check .
-
-  dev:
-    desc: List the CDK stacks and their dependencies
-    cmds:
-      - npx --yes aws-cdk@2 ls --show-dependencies
-
   test:
-    desc: Run CDK and seeder tests, lint the chart and validate event contracts
+    desc: Run pytest and the vent chart checks (helm unittest, ct lint, kubeconform, trivy)
     cmds:
       - uv run pytest
-      - uv run --directory seeder pytest
-      - helm lint charts/prismatic-service
-      - task: contracts
+      - task: chart:test
 
-  contracts:
-    desc: Validate event contract schemas and the registry
-    cmds:
-      - uv run check-jsonschema --check-metaschema contracts/events/*.schema.json
-      - uv run check-jsonschema --schemafile contracts/events/registry.v1.schema.json contracts/events/registry.v1.yaml
-
-  build:
-    desc: Synthesize CloudFormation templates into cdk.out
+  synth:
+    desc: cdk synth with cdk-nag AwsSolutionsChecks
     cmds:
       - npx --yes aws-cdk@2 synth --quiet
 
-  up:
-    desc: Deploy all stacks (requires AWS credentials)
+  chart:render:
+    internal: true
     cmds:
-      - npx --yes aws-cdk@2 deploy --all
+      - mkdir -p {{.RENDERED}}
+      - for: { var: VALUES }
+        cmd: helm template vent-{{base .ITEM | trimSuffix ".yaml"}} charts/vent -n vent-{{base .ITEM | trimSuffix ".yaml"}} -f {{.ITEM}} > {{.RENDERED}}/{{base .ITEM}}
+      - cp platform/*.yaml {{.RENDERED}}/
+    vars:
+      VALUES:
+        sh: ls charts/vent/ci/*-values.yaml
 
-  down:
-    desc: Destroy all stacks (requires AWS credentials)
+  chart:test:
+    internal: true
     cmds:
-      - npx --yes aws-cdk@2 destroy --all
+      - docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/apps" {{.HELM_UNITTEST_IMAGE}} charts/vent
+      - >-
+        docker run --rm -v "{{.GIT_COMMON_DIR}}:{{.GIT_COMMON_DIR}}" -v "$PWD:$PWD" -w "$PWD" {{.CT_IMAGE}}
+        sh -c 'git config --global --add safe.directory "*" && ct lint --charts charts/vent --target-branch main'
+      - task: chart:render
+      - docker run --rm -v "$PWD/{{.RENDERED}}:/r" {{.KUBECONFORM_IMAGE}} -strict -summary -ignore-missing-schemas /r
+      - docker run --rm -v "$PWD/{{.RENDERED}}:/r" {{.TRIVY_IMAGE}} config --exit-code 1 /r
+
+  local:up:
+    desc: kind cluster with Cilium, KEDA and platform/ applied
+    cmds:
+      - kind create cluster --config local/kind-config.yaml
+      - helm repo add cilium https://helm.cilium.io --force-update
+      - helm repo add kedacore https://kedacore.github.io/charts --force-update
+      - >-
+        helm upgrade --install cilium cilium/cilium --version {{.CILIUM_VERSION}}
+        --kube-context kind-caldera -n kube-system -f local/cilium-values.yaml --wait
+      - >-
+        helm upgrade --install keda kedacore/keda --version {{.KEDA_VERSION}}
+        --kube-context kind-caldera -n keda --create-namespace --wait
+      - kubectl --context kind-caldera apply -f platform/namespace.yaml
+      - kubectl --context kind-caldera apply -f platform/
+
+  local:down:
+    desc: Delete the kind cluster
+    cmds:
+      - kind delete cluster --name caldera
+
+  verify:clean:
+    desc: Fail if AWS resources from the platform remain after cdk destroy
+    cmds:
+      - uv run python scripts/verify_clean.py {{.CLI_ARGS}}

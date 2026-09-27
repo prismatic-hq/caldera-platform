@@ -1,0 +1,69 @@
+name: vent-cooling
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        description: Service repo whose branch was deleted (tremor-api or steward-api)
+        type: string
+        required: true
+      branch:
+        type: string
+        required: true
+      platform-ref:
+        description: caldera-platform ref that provides the CLI and chart
+        type: string
+        default: main
+    secrets:
+      CALDERA_TOKEN:
+        description: Token that can read caldera-platform and both service repos
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      vent: ${{ steps.plan.outputs.vent }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: prismatic-hq/caldera-platform
+          ref: ${{ inputs.platform-ref }}
+          token: ${{ secrets.CALDERA_TOKEN || github.token }}
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - id: plan
+        env:
+          REPO: ${{ inputs.repo }}
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          plan=$(uv run caldera vent resolve --repo "$REPO" --branch "$BRANCH" --other-missing-branch)
+          echo "vent=$(jq -r .vent <<<"$plan")" >> "$GITHUB_OUTPUT"
+
+  down:
+    needs: resolve
+    runs-on: ubuntu-latest
+    concurrency:
+      group: vent-${{ needs.resolve.outputs.vent }}
+      cancel-in-progress: false
+    env:
+      GITHUB_TOKEN: ${{ secrets.CALDERA_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: prismatic-hq/caldera-platform
+          ref: ${{ inputs.platform-ref }}
+          token: ${{ secrets.CALDERA_TOKEN || github.token }}
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - env:
+          REPO: ${{ inputs.repo }}
+          BRANCH: ${{ inputs.branch }}
+        run: uv run caldera vent down --repo "$REPO" --branch "$BRANCH" --dry-run

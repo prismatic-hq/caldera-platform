@@ -1,0 +1,14 @@
+name: vent-sweeper
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stub (FR-4.10)
+        run: echo "vent sweeper not implemented; would cool vents with no branch or no push for 72h"
