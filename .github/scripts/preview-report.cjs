@@ -82,6 +82,27 @@ async function report({ github, context, env = process.env }) {
   await upsertPullRequestComments(github, owner, repo, env.SHA, result.environment, body);
 }
 
+async function recordDeployment({ github, context, env = process.env }) {
+  const { owner, repo } = context.repo;
+  const { data: deployment } = await github.rest.repos.createDeployment({
+    owner,
+    repo,
+    ref: env.SHA,
+    environment: `preview-${env.ENVIRONMENT}`,
+    auto_merge: false,
+    required_contexts: [],
+    production_environment: false,
+  });
+  await github.rest.repos.createDeploymentStatus({
+    owner,
+    repo,
+    deployment_id: deployment.id,
+    state: "success",
+    environment_url: env.URL,
+    log_url: `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`,
+  });
+}
+
 async function deactivate({ github, context, env = process.env }) {
   const { owner, repo } = context.repo;
   const deployments = await github.paginate(github.rest.repos.listDeployments, {
@@ -100,4 +121,4 @@ async function deactivate({ github, context, env = process.env }) {
   }
 }
 
-module.exports = { report, deactivate, reportBody };
+module.exports = { report, recordDeployment, deactivate, reportBody };

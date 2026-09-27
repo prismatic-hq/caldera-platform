@@ -32,55 +32,14 @@ env:
   KUBECTL_VERSION: v1.35.0
 
 jobs:
-  resolve:
+  down:
     if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
     runs-on: ${{ github.event.repository.name }}-runners
-    outputs:
-      environment: ${{ steps.plan.outputs.environment }}
-    steps:
-      - id: config
-        name: Check workflow configuration
-        env:
-          CLIENT_ID: ${{ secrets.CALDERA_APP_CLIENT_ID }}
-          PRIVATE_KEY: ${{ secrets.CALDERA_APP_PRIVATE_KEY }}
-        run: |
-          missing=()
-          [ -n "$AWS_REGION" ] || missing+=("variable AWS_REGION")
-          [ -n "$CLIENT_ID" ] || missing+=("secret CALDERA_APP_CLIENT_ID")
-          [ -n "$PRIVATE_KEY" ] || missing+=("secret CALDERA_APP_PRIVATE_KEY")
-          if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::$GITHUB_REPOSITORY is missing: ${missing[*]}. Set them at repository level; private repos on GitHub Free cannot read organization secrets or variables."
-            exit 1
-          fi
-      - id: app-token
-        uses: actions/create-github-app-token@v3.2.0
-        with:
-          client-id: ${{ secrets.CALDERA_APP_CLIENT_ID }}
-          private-key: ${{ secrets.CALDERA_APP_PRIVATE_KEY }}
-          owner: prismatic-hq
-          repositories: caldera-platform,tremor-api,steward-api
-          permission-contents: read
-      - uses: actions/checkout@v7
-        with:
-          repository: prismatic-hq/caldera-platform
-          ref: ${{ inputs.platform-ref }}
-          token: ${{ steps.app-token.outputs.token }}
-      - uses: astral-sh/setup-uv@v10.2.0
-        with:
-          enable-cache: true
-      - run: uv sync --locked
-      - id: plan
-        env:
-          REPO: ${{ inputs.repo }}
-          BRANCH: ${{ inputs.branch }}
-        run: uv run preview env resolve --repo "$REPO" --branch "$BRANCH" --offline
-
-  down:
-    needs: resolve
-    runs-on: ${{ github.event.repository.name }}-runners
     concurrency:
-      group: preview-${{ needs.resolve.outputs.environment }}
+      group: preview-${{ inputs.repo }}-${{ inputs.branch }}
       cancel-in-progress: false
+    env:
+      UV_NO_SYNC: "1"
     steps:
       - id: config
         name: Check workflow configuration
@@ -112,13 +71,14 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
+          cache-suffix: preview-cli
       - uses: azure/setup-helm@v5.0.1
         with:
           version: ${{ env.HELM_VERSION }}
       - uses: azure/setup-kubectl@v5.1.0
         with:
           version: ${{ env.KUBECTL_VERSION }}
-      - run: uv sync --locked
+      - run: uv sync --locked --package preview-cli --no-dev
       - id: down
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}

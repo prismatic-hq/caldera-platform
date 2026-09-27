@@ -33,8 +33,8 @@ Requirements and decisions live in [REQUIREMENTS.md](REQUIREMENTS.md). This page
    controllers still run; the sweepers (`NetworkStack`, `DnsStack`) delete what remains.
 2. A push to a non-`main` branch in a service repo runs lint, tests and the image build, pushes
    `sha-<short-sha>` to ECR, and calls `preview-environment.yml`.
-3. `preview-environment.yml` runs `preview env resolve` to name the preview environment, then
-   `preview env up` in concurrency group `preview-<name>` (newest push wins), which runs
+3. `preview-environment.yml` runs `preview env up` in one job, concurrency group
+   `preview-<repo>-<branch>` (newest push wins); it names the environment, takes its Lease, and runs
    `helm upgrade --install preview-<name> charts/services -n preview-<name> --create-namespace --wait`.
 4. The `delete` event calls `preview-environment-teardown.yml`, which runs `preview env down` (never cancelled).
 5. The same `preview` commands run on a laptop against EKS or kind (`--context kind-caldera`).
