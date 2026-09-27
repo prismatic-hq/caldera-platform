@@ -616,3 +616,59 @@ def test_addons_run_at_most_three_kubectl_resources_at_once(templates) -> None:
         if not any(ordered(a, b) for a, b in combinations(group, 2))
     ]
     assert not concurrent, concurrent[0]
+
+
+ADMIN_POLICY = "arn:${AWS::Partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+
+def admin_role(template: Template) -> tuple[str, dict]:
+    [(logical_id, role)] = [
+        (logical_id, role)
+        for logical_id, role in resources(template, "AWS::IAM::Role").items()
+        if logical_id.startswith("ClusterAdminRole")
+    ]
+    return logical_id, role
+
+
+def test_cluster_admin_role_trusts_the_account_by_default(templates) -> None:
+    _, role = admin_role(templates["Cluster"])
+    [statement] = role["Properties"]["AssumeRolePolicyDocument"]["Statement"]
+    assert statement["Action"] == "sts:AssumeRole"
+    assert "root" in json.dumps(statement["Principal"])
+
+
+def test_cluster_admin_role_trusts_only_the_configured_principals(synth) -> None:
+    principals = ["arn:aws:iam::111122223333:role/ops", "arn:aws:iam::111122223333:user/alice"]
+    _, role = admin_role(synth({"clusterAdminPrincipals": principals})["Cluster"])
+    trusted = [
+        statement["Principal"]["AWS"]
+        for statement in role["Properties"]["AssumeRolePolicyDocument"]["Statement"]
+    ]
+    flattened = [
+        arn for entry in trusted for arn in (entry if isinstance(entry, list) else [entry])
+    ]
+    assert sorted(flattened) == sorted(principals)
+
+
+def test_cluster_admin_role_gets_cluster_admin_access(templates) -> None:
+    cluster = templates["Cluster"]
+    logical_id, _ = admin_role(cluster)
+    cluster.has_resource_properties(
+        "AWS::EKS::AccessEntry",
+        {
+            "PrincipalArn": {"Fn::GetAtt": [logical_id, "Arn"]},
+            "AccessPolicies": [
+                {
+                    "AccessScope": {"Type": "cluster"},
+                    "PolicyArn": {"Fn::Join": Match.any_value()},
+                }
+            ],
+        },
+    )
+    entries = json.dumps(resources(cluster, "AWS::EKS::AccessEntry"))
+    assert "AmazonEKSClusterAdminPolicy" in entries
+
+
+def test_cluster_stack_outputs_what_kube_connect_reads(templates) -> None:
+    outputs = templates["Cluster"].to_json()["Outputs"]
+    assert {"ClusterAdminRoleArn", "ClusterName"} <= set(outputs)

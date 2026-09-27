@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,6 +13,7 @@ ENVIRONMENTS_DIR = REPO_ROOT / "deploy" / "environments"
 SSM_PREFIX = "/prismatic/"
 PLATFORM_TAG = "prismatic:platform"
 GITHUB_APP_KEYS = ("github_app_id", "github_app_installation_id", "github_app_private_key")
+IAM_PRINCIPAL_ARN = re.compile(r"^arn:aws[a-z-]*:iam::\d{12}:(role|user)/\S+$")
 
 
 def load_environment(name: str | None, directory: Path) -> dict[str, object]:
@@ -43,6 +45,16 @@ def parse_list(value: object) -> tuple[str, ...]:
     return tuple(str(item).strip() for item in items if str(item).strip())
 
 
+def parse_principal_arns(value: object) -> tuple[str, ...]:
+    arns = parse_list(value)
+    invalid = [arn for arn in arns if not IAM_PRINCIPAL_ARN.match(arn)]
+    if invalid:
+        raise ValueError(
+            f"clusterAdminPrincipals must be IAM role or user ARNs, got {', '.join(invalid)}"
+        )
+    return arns
+
+
 @dataclass(frozen=True)
 class PlatformConfig:
     cluster_name: str
@@ -54,6 +66,7 @@ class PlatformConfig:
     budget_email: str
     acme_email: str
     allowlist_cidrs: tuple[str, ...]
+    cluster_admin_principals: tuple[str, ...]
     registry: ServiceRegistry
 
     @classmethod
@@ -88,6 +101,7 @@ class PlatformConfig:
             budget_email=str(context("budgetEmail", f"platform@{domain}")),
             acme_email=str(context("acmeEmail", f"platform@{domain}")),
             allowlist_cidrs=parse_list(context("previewAllowlistCidrs", [])),
+            cluster_admin_principals=parse_principal_arns(context("clusterAdminPrincipals", [])),
             registry=ServiceRegistry.load(SERVICES_FILE),
         )
 

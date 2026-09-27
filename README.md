@@ -9,7 +9,7 @@ Related repos:
 - [steward-api](https://github.com/prismatic-hq/steward-api): sites, crews and work orders
 
 Docs: [REQUIREMENTS.md](docs/REQUIREMENTS.md), [ARCHITECTURE.md](docs/ARCHITECTURE.md),
-[GITHUB_APP.md](docs/GITHUB_APP.md).
+[GITHUB_APP.md](docs/GITHUB_APP.md), [CLUSTER_ACCESS.md](docs/CLUSTER_ACCESS.md) (kubectl access).
 
 ## Layout
 

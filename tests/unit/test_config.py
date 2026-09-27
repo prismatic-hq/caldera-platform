@@ -92,3 +92,20 @@ def test_committed_environment_files_define_a_domain() -> None:
     assert files
     for path in files:
         assert PlatformConfig.from_context(cdk.App(context={"env": path.name}).node).domain
+
+
+def test_cluster_admin_principals_default_to_none() -> None:
+    assert config().cluster_admin_principals == ()
+
+
+def test_cluster_admin_principals_parse_from_cli_strings() -> None:
+    arns = "arn:aws:iam::111122223333:role/ops, arn:aws:iam::111122223333:user/alice"
+    assert config(clusterAdminPrincipals=arns).cluster_admin_principals == (
+        "arn:aws:iam::111122223333:role/ops",
+        "arn:aws:iam::111122223333:user/alice",
+    )
+
+
+def test_cluster_admin_principals_must_be_iam_arns() -> None:
+    with pytest.raises(ValueError, match="clusterAdminPrincipals"):
+        config(clusterAdminPrincipals="ops-role")
