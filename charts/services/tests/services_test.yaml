@@ -88,6 +88,32 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].resources.requests.cpu
           value: 100m
+  - it: tells every service where the others are by in-cluster Service name
+    set:
+      services.steward.port: 8080
+    documentIndex: 4
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: STEWARD_URL
+            value: http://steward:8080
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TREMOR_URL
+            value: http://tremor:8000
+  - it: turns dashes in service names into underscores in URL variables
+    set:
+      services.magma-api.image.repository: magma-api
+      services.magma-api.image.tag: main
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: MAGMA_API_URL
+            value: http://magma-api:8000
   - it: rejects a service name that is not a DNS label
     set:
       services.Magma.image.repository: magma-api

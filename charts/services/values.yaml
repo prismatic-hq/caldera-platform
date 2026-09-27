@@ -32,6 +32,20 @@ serviceDefaults:
 
 services: {}
 
+e2e:
+  enabled: true
+  image:
+    repository: e2e
+    tag: main
+  timeoutSeconds: 240
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
 postgres:
   image:
     repository: golden-db

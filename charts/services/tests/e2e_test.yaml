@@ -1,0 +1,81 @@
+suite: e2e test hook
+values:
+  - ../ci/default-values.yaml
+templates:
+  - templates/e2e.yaml
+set:
+  environment.name: quake-alerts
+  image.registry: registry.example
+tests:
+  - it: runs the e2e image as a helm test hook
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Pod
+      - equal:
+          path: metadata.name
+          value: e2e
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: test
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: before-hook-creation
+      - equal:
+          path: spec.containers[0].image
+          value: registry.example/e2e:main
+      - equal:
+          path: spec.restartPolicy
+          value: Never
+  - it: calls the services by in-cluster Service name
+    asserts:
+      - contains:
+          path: spec.containers[0].env
+          content:
+            name: TREMOR_URL
+            value: http://tremor:8000
+      - contains:
+          path: spec.containers[0].env
+          content:
+            name: STEWARD_URL
+            value: http://steward:8000
+  - it: is not the database, so the same-namespace policy lets it reach the services
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/component"]
+          value: e2e
+      - equal:
+          path: metadata.labels["prismatic.dev/environment"]
+          value: quake-alerts
+  - it: runs hardened and bounded
+    set:
+      priorityClassName: preview-environment
+    asserts:
+      - equal:
+          path: spec.automountServiceAccountToken
+          value: false
+      - equal:
+          path: spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - isNotNullOrEmpty:
+          path: spec.activeDeadlineSeconds
+      - equal:
+          path: spec.priorityClassName
+          value: preview-environment
+  - it: pins the e2e image tag when set
+    set:
+      e2e.image.tag: sha-a1b2c3d
+    asserts:
+      - equal:
+          path: spec.containers[0].image
+          value: registry.example/e2e:sha-a1b2c3d
+  - it: can be turned off
+    set:
+      e2e.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
