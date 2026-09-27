@@ -50,6 +50,12 @@ tasks:
     cmds:
       - uv run python -m scripts.put_secrets {{.CLI_ARGS}}
 
+  kube:connect:
+    desc: Tunnel to the private EKS API and set kubectl context caldera (runs until Ctrl-C)
+    interactive: true
+    cmds:
+      - uv run python -m scripts.kube_connect {{.CLI_ARGS}}
+
   chart:render:
     internal: true
     cmds:
