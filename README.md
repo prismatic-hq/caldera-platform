@@ -81,28 +81,37 @@ Steps:
 
 ## Measured timings
 
-Not measured yet: fill this in from real runs against the deployed cluster. Every `preview`
-command prints a `{"timings": ...}` JSON line and writes a stage table to the job summary.
-Stages: `resolve` (feature group, GitHub lookups), `images` (ECR digests, dataset version),
-`chart_dependencies`, `helm_upgrade` (scheduling, image pulls, database, migrations and readiness,
-as `helm --wait` sees them), `e2e` (`helm test`), `teardown`.
+Measured 2026-09-27 on the dev cluster from four tremor-api and steward-api `ci` runs on
+`test/preview-smoke` and two `preview-teardown` runs. Small sample: with at most 7 runs, p90 is the
+slowest run. Every `preview` command prints a `{"timings": ...}` JSON line and writes a stage table
+to the job summary. Stages: `resolve` (feature group, GitHub lookups), `namespace`, `images` (ECR
+digests, dataset version), `recover` (only when a release needs recovery), `chart_dependencies`,
+`helm_upgrade` (scheduling, image pulls, database, migrations and readiness, as `helm --wait` sees
+them), `e2e` (`helm test`), `teardown`.
 
 | Command | Stage | p50 (s) | p90 (s) | Runs |
 |---|---|---|---|---|
-| up | resolve | | | |
-| up | images | | | |
-| up | chart_dependencies | | | |
-| up | helm_upgrade | | | |
-| up | total | | | |
-| test | e2e | | | |
-| down | teardown | | | |
+| up | resolve | 2.2 | 3.2 | 7 |
+| up | images | 0.7 | 0.9 | 7 |
+| up | chart_dependencies | 0.1 | 0.4 | 7 |
+| up | helm_upgrade | 21.8 | 36.0 | 7 |
+| up | total | 30.7 | 37.5 | 7 |
+| test | e2e | 8.2 | 9.8 | 2 |
+| down | teardown | 1.1 | 2.2 | 2 |
 
-| Section 1 target | Target p90 | Measured p90 |
-|---|---|---|
-| New preview environment, image already built (`up` total, new release) | under 60s | |
-| Push to URL with branch code (push to end of the `up` job) | under 3 min | |
-| Push to an existing preview environment (push to end of the `up` job) | under 2 min | |
-| Teardown (`down` total) | under 60s | |
+`namespace` (0.2s, 3 runs) and `recover` (6.2s, 1 run) are omitted. Two `test` runs that finished
+in 0.06s ran no tests and are excluded.
+
+| Section 1 target | Target p90 | Measured p90 | Result |
+|---|---|---|---|
+| New preview environment, image already built (`up` total, new release) | under 60s | 37.5s (2 runs) | met |
+| Push to URL with branch code (push to end of the `up` job) | under 3 min | 4m05s (2 runs) | missed |
+| Push to an existing preview environment (push to end of the `up` job) | under 2 min | 3m27s (2 runs) | missed |
+| Teardown (`down` total) | under 60s | 2.2s (2 runs); 31s job | met |
+
+The push-to-URL misses come from the pipeline, not `up` (at most 37.5s): `preview / up` starts
+2m20s-3m25s after the push, behind `build`, `preview / resolve` and runner pickup. For a new
+branch, the optimistic environment serves a URL about 2m10s after the push.
 
 Push-to-URL times come from the Actions run (push event time to the `up` job's end). To fill the table from the last 20 preview runs of a service repo:
 
