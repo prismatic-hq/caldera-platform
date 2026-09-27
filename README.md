@@ -16,7 +16,7 @@ Docs: [REQUIREMENTS.md](docs/REQUIREMENTS.md), [ARCHITECTURE.md](docs/ARCHITECTU
 |---|---|
 | `caldera/` | CDK stacks and cdk-nag suppressions (`nag_suppressions.py`) |
 | `cli/`, `services.yaml` | `preview env resolve\|up\|down\|reset` and the service registry it reads |
-| `charts/preview-environment/` | Helm chart for one preview environment |
+| `charts/services/` | Helm chart for one preview environment |
 | `platform/` | PriorityClasses, headroom Deployment, KEDA `ScaledObject` |
 | `seeder/`, `images/golden-db/` | Golden dataset and golden DB image |
 | `contracts/events/` | CloudEvents envelope, registry, data schemas and examples |
