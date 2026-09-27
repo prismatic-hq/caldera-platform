@@ -25,6 +25,10 @@ serviceDefaults:
     limits:
       cpu: 500m
       memory: 256Mi
+  migration:
+    enabled: true
+    command: ["alembic", "upgrade", "head"]
+    timeoutSeconds: 180
 
 services: {}
 

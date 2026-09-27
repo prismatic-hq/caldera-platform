@@ -75,8 +75,7 @@ A pause-pod headroom Deployment holds spare preview environment capacity, sized 
 - KEDA's `kubernetes-workload` trigger only counts pods in the `ScaledObject`'s own namespace, so
   it cannot see pods in `preview-*` namespaces as FR-7.3 assumes. The cron trigger works; replace the
   workload trigger with a Prometheus or metrics-api count across namespaces before relying on it.
-- Branch migrations as Helm hook Jobs (FR-5.4), event publishing (FR-9) and the golden image build
-  (FR-6.2) are not implemented yet.
+- Event publishing (FR-9) and the golden image build (FR-6.2) are not implemented yet.
 - Not in the CDK app yet: the pre-pull DaemonSet (FR-6.5, FR-7.5), oauth2-proxy login (Section 4a),
   NLB access logs, the working-hours warm minimum for ARC runners (`minRunners` is 0) and the
   cycle-time dashboard (FR-9.3). The IP allowlist is off unless `previewAllowlistCidrs` is set.

@@ -1,0 +1,74 @@
+{{- $labels := include "services.labels" . | fromYaml }}
+{{- $databaseEnv := include "services.databaseEnv" . | fromYamlArray }}
+{{- $postgres := .Values.postgres }}
+{{- range $name, $overrides := .Values.services }}
+{{- $service := mustMergeOverwrite (deepCopy $.Values.serviceDefaults) $overrides }}
+{{- if $service.migration.enabled }}
+{{- $podLabels := merge (dict "app.kubernetes.io/name" (printf "%s-migrate" $name) "app.kubernetes.io/component" "migration") (deepCopy $labels) }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}-migrate
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- toYaml $podLabels | nindent 4 }}
+  annotations:
+    {{- include "services.hook" (dict "weight" 0) | nindent 4 }}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ $service.migration.timeoutSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- toYaml $podLabels | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      {{- with $.Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "service.podSecurityContext" (dict "uid" 10001) | nindent 8 }}
+      initContainers:
+        - name: wait-for-postgres
+          image: {{ include "services.postgresImage" $ }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - >-
+              until [ "$(psql -h postgres -U {{ $postgres.user }} -d {{ $postgres.database }} -XAtc 'SHOW prismatic.release_revision')" = "{{ $.Release.Revision }}" ];
+              do sleep 1; done
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: password
+            - name: PGCONNECT_TIMEOUT
+              value: "2"
+          resources:
+            {{- toYaml $service.resources | nindent 12 }}
+          securityContext:
+            {{- include "service.containerSecurityContext" . | nindent 12 }}
+      containers:
+        - name: migrate
+          image: {{ include "service.imageReference" (merge (dict "registry" $.Values.image.registry) $service.image) }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          command:
+            {{- toYaml $service.migration.command | nindent 12 }}
+          env:
+            {{- toYaml $databaseEnv | nindent 12 }}
+          resources:
+            {{- toYaml $service.resources | nindent 12 }}
+          securityContext:
+            {{- include "service.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}
+{{- end }}

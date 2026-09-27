@@ -1,11 +1,6 @@
 {{- $environment := include "services.environmentName" . }}
 {{- $labels := include "services.labels" . | fromYaml }}
-{{- $databaseEnv := list
-  (dict "name" "DB_HOST" "value" "postgres")
-  (dict "name" "DB_PORT" "value" "5432")
-  (dict "name" "DB_NAME" "value" .Values.postgres.database)
-  (dict "name" "DB_USER" "value" .Values.postgres.user)
-  (dict "name" "DB_PASSWORD" "valueFrom" (dict "secretKeyRef" (dict "name" "postgres-credentials" "key" "password"))) }}
+{{- $databaseEnv := include "services.databaseEnv" . | fromYamlArray }}
 {{- range $name, $overrides := .Values.services }}
 {{- $service := mustMergeOverwrite (deepCopy $.Values.serviceDefaults) $overrides }}
 ---
