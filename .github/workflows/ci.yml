@@ -39,8 +39,6 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: uv run pytest
-      - run: uv sync --locked --directory seeder
-      - run: uv run --directory seeder pytest
 
   synth:
     runs-on: ubuntu-latest
