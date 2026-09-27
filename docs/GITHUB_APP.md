@@ -1,0 +1,53 @@
+# GitHub App for ARC runners
+
+The ARC runner scale sets register with GitHub as a GitHub App. There is one scale set per
+repository: `caldera-platform` and every `repo` in `services.yaml`. An org owner creates the app
+once. Its credentials go to SSM Parameter Store, and External Secrets syncs them into the
+`github-app` Secret.
+
+## Create the app
+
+1. Open **Org Settings -> Developer settings -> GitHub Apps -> New GitHub App**
+   (`https://github.com/organizations/prismatic-hq/settings/apps/new`).
+2. Set **GitHub App name** (for example `prismatic-hq-arc`) and **Homepage URL**
+   (`https://github.com/prismatic-hq/caldera-platform`).
+3. Under **Webhook**, clear **Active**. ARC polls GitHub and needs no webhook.
+4. Set **Repository permissions**:
+   - **Administration**: Read and write (registers repository runners)
+   - **Metadata**: Read-only
+   - Leave every other permission set to **No access**.
+5. Under **Where can this GitHub App be installed?**, select **Only on this account**, then
+   click **Create GitHub App**.
+6. Copy the **App ID** from the app's General page. Do not use the **Client ID** (`Iv23...`).
+7. Under **Private keys**, click **Generate a private key**. The browser downloads
+   `<app-name>.<date>.private-key.pem`.
+
+## Install the app
+
+1. On the app page, open **Install App**, then click **Install** next to `prismatic-hq`.
+2. Choose **Only select repositories** and pick `caldera-platform`, `tremor-api` and
+   `steward-api`. Add each new service repo here when you add it to `services.yaml`.
+3. Get the numeric installation ID. It is the number at the end of the install page URL
+   (`.../settings/installations/<id>`). You can also run:
+
+   ```sh
+   gh api /orgs/prismatic-hq/installations --jq '.installations[] | {app_id, id}'
+   ```
+
+## Store the credentials
+
+Run this after every fresh deploy. The network sweeper deletes `/prismatic/` on destroy.
+
+```sh
+task secrets:put -- --app-id <app-id> --installation-id <installation-id> \
+  --private-key-file ~/Downloads/<app-name>.<date>.private-key.pem
+```
+
+After the command succeeds, delete the `.pem` or move it to a password manager. Never paste the
+key into chat, tickets or commits.
+
+## Rotate the key
+
+1. Generate a new private key on the app page.
+2. Run `task secrets:put` with the new `.pem`.
+3. Delete the old key on the app page.
