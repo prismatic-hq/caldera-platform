@@ -39,3 +39,10 @@ task init && task test
 | `task local:up` / `task local:down` | kind cluster with Cilium, KEDA and `platform/` |
 | `task verify:clean` | Fail if AWS resources remain after `cdk destroy` |
 | `uv run preview env up ... --dry-run` | Print the Helm command for a preview environment |
+
+## Deploy
+
+`npx aws-cdk@2 deploy --all -c domain=<domain>`. Other context: `natGateways` (1 or 2),
+`budgetEmail` and `acmeEmail` (default `platform@<domain>`), `previewAllowlistCidrs` (`a,b`).
+Then write the GitHub App keys to SSM under `/prismatic/github-app/` and point the domain's
+NS records at the new hosted zone.

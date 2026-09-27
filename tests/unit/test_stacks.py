@@ -26,6 +26,13 @@ def resources(template: Template, resource_type: str) -> dict[str, dict]:
     return template.find_resources(resource_type)
 
 
+def chart_names(template: Template) -> set[str]:
+    return {
+        props["Properties"]["Chart"]
+        for props in resources(template, "Custom::AWSCDK-EKS-HelmChart").values()
+    }
+
+
 def test_network_spans_two_azs_with_flow_logs_one_nat_and_s3_endpoint(templates) -> None:
     network = templates["Network"]
 
@@ -213,6 +220,65 @@ def test_dns_zone_is_swept_before_deletion(templates) -> None:
 
     dns.has_resource_properties("AWS::Route53::HostedZone", {"Name": "prismatic.dev."})
     dns.resource_count_is("Custom::ZoneSweeper", 1)
+
+
+def test_ci_roles_trust_only_push_events_of_one_repository(templates) -> None:
+    roles = resources(templates["CiAccess"], "AWS::IAM::Role")
+    subjects = sorted(
+        statement["Condition"]["StringLike"]["token.actions.githubusercontent.com:sub"]
+        for role in roles.values()
+        for statement in role["Properties"]["AssumeRolePolicyDocument"]["Statement"]
+        if "Federated" in statement["Principal"]
+    )
+
+    assert subjects == [
+        "repo:prismatic-hq/caldera-platform:ref:refs/heads/main",
+        "repo:prismatic-hq/steward-api:ref:refs/heads/*",
+        "repo:prismatic-hq/tremor-api:ref:refs/heads/*",
+    ]
+
+
+def test_runners_get_ecr_push_through_pod_identity(templates) -> None:
+    templates["CiAccess"].has_resource_properties(
+        "AWS::EKS::PodIdentityAssociation",
+        {"Namespace": "arc-runners", "ServiceAccount": "arc-runner"},
+    )
+
+
+def test_addons_install_every_section_4_chart(templates) -> None:
+    assert chart_names(templates["Addons"]) == {
+        "aws-load-balancer-controller",
+        "cert-manager",
+        "external-dns",
+        "gateway-helm",
+        "gha-runner-scale-set",
+        "gha-runner-scale-set-controller",
+        "keda",
+        "metrics-server",
+        "external-secrets",
+    }
+    assert chart_names(templates["Cluster"]) == {"cilium", "karpenter"}
+
+
+def test_drainer_depends_on_every_addon(templates) -> None:
+    addons = templates["Addons"]
+    drainer = next(iter(resources(addons, "Custom::Drainer").values()))
+    installed = set(resources(addons, "Custom::AWSCDK-EKS-HelmChart")) | set(
+        resources(addons, "Custom::AWSCDK-EKS-KubernetesResource")
+    )
+
+    assert installed <= set(drainer["DependsOn"])
+
+
+def test_no_preview_namespace_gets_cloud_permissions(templates) -> None:
+    namespaces = [
+        association["Properties"]["Namespace"]
+        for template in templates.values()
+        for association in resources(template, "AWS::EKS::PodIdentityAssociation").values()
+    ]
+
+    assert namespaces
+    assert not [ns for ns in namespaces if str(ns).startswith("preview-")]
 
 
 def test_teardown_leaves_nothing_retained(templates) -> None:
