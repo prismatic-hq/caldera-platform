@@ -51,11 +51,17 @@ key into chat, tickets or commits.
 
 ## Store the workflow secrets
 
-Add two organization secrets under **Org Settings -> Secrets and variables -> Actions**, with
-repository access for `caldera-platform`, `tremor-api` and `steward-api`:
+Private repositories on the GitHub Free plan cannot read organization secrets or variables, so
+each repo gets its own copy. Run this once, and again after rotating the key:
 
-- `CALDERA_APP_CLIENT_ID`: the **Client ID**
-- `CALDERA_APP_PRIVATE_KEY`: the full contents of the `.pem`
+```sh
+mise run secrets:github -- --client-id <Iv23...> --region us-east-2 \
+  --private-key-file ~/Downloads/<app-name>.<date>.private-key.pem
+```
+
+It sets `CALDERA_APP_CLIENT_ID` and `CALDERA_APP_PRIVATE_KEY` secrets and the `AWS_REGION`
+variable on `caldera-platform` and every repo in `services.yaml`. Values go to `gh` on stdin,
+never on the command line. You need admin access to each repo.
 
 Each job mints a one-hour, contents-read installation token with
 `actions/create-github-app-token`.
@@ -63,5 +69,5 @@ Each job mints a one-hour, contents-read installation token with
 ## Rotate the key
 
 1. Generate a new private key on the app page.
-2. Run `mise run secrets:put` with the new `.pem` and update `CALDERA_APP_PRIVATE_KEY`.
+2. Run `mise run secrets:put` and `mise run secrets:github` with the new `.pem`.
 3. Delete the old key on the app page.

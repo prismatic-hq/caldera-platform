@@ -94,3 +94,7 @@ run = "kind delete cluster --name caldera"
 [tasks."verify:clean"]
 description = "Fail if AWS resources from the platform remain after cdk destroy"
 run = "uv run python scripts/verify_clean.py"
+
+[tasks."secrets:github"]
+description = "Write the GitHub App secrets and AWS_REGION variable to every platform and service repo"
+run = "uv run python -m scripts.put_github_secrets"
