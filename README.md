@@ -36,13 +36,15 @@ task init && task test
 |---|---|
 | `task test` | pytest, helm unittest, ct lint, kubeconform, trivy config |
 | `task synth` | `cdk synth` with cdk-nag `AwsSolutionsChecks` |
+| `task bootstrap` | One-time `cdk bootstrap` of the account and region |
+| `task deploy -- -c domain=<domain>` | Deploy every stack |
+| `task secrets:put -- --app-id ... --installation-id ... --private-key-file app.pem` | GitHub App credentials to SSM for the runners |
+| `task destroy` | Destroy every stack, then `task verify:clean` |
 | `task local:up` / `task local:down` | kind cluster with Cilium, KEDA and `platform/` |
-| `task verify:clean` | Fail if AWS resources remain after `cdk destroy` |
 | `uv run preview env up ... --dry-run` | Print the Helm command for a preview environment |
 
 ## Deploy
 
-`npx aws-cdk@2 deploy --all -c domain=<domain>`. Other context: `natGateways` (1 or 2),
+`task bootstrap`, then `task deploy -- -c domain=<domain>` and `task secrets:put`, then point
+the domain's NS records at the new hosted zone. Other context: `natGateways` (1 or 2),
 `budgetEmail` and `acmeEmail` (default `platform@<domain>`), `previewAllowlistCidrs` (`a,b`).
-Then write the GitHub App keys to SSM under `/prismatic/github-app/` and point the domain's
-NS records at the new hosted zone.

@@ -29,6 +29,27 @@ tasks:
     cmds:
       - npx --yes aws-cdk@2 synth --quiet
 
+  bootstrap:
+    desc: One-time cdk bootstrap of the target account and region
+    cmds:
+      - npx --yes aws-cdk@2 bootstrap {{.CLI_ARGS}}
+
+  deploy:
+    desc: Deploy every stack; pass context after --, e.g. task deploy -- -c domain=example.com
+    cmds:
+      - npx --yes aws-cdk@2 deploy --all {{.CLI_ARGS}}
+
+  destroy:
+    desc: Destroy every stack, then fail if any platform resource remains
+    cmds:
+      - npx --yes aws-cdk@2 destroy --all --force {{.CLI_ARGS}}
+      - task: verify:clean
+
+  secrets:put:
+    desc: Write the GitHub App credentials for the ARC runners to SSM Parameter Store
+    cmds:
+      - uv run python -m scripts.put_secrets {{.CLI_ARGS}}
+
   chart:render:
     internal: true
     cmds:
