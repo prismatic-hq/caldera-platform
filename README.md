@@ -1,11 +1,12 @@
 # caldera-platform
 
-Platform for Prismatic HQ preview environments ("vents"). AWS CDK (Python) provisions the AWS
-foundations; see [REQUIREMENTS.md](docs/REQUIREMENTS.md) for the design.
+Platform for Prismatic HQ preview environments ("vents"). AWS CDK (Python) provisions EKS with
+Cilium and Karpenter; each vent is a namespace plus a Helm release deployed from CI by the
+`caldera` CLI.
 
 Related repos:
-- [tremor-api](https://github.com/prismatic-hq/tremor-api): seismic signal streams and alerts service
-- [steward-api](https://github.com/prismatic-hq/steward-api): resource and operations management service
+- [tremor-api](https://github.com/prismatic-hq/tremor-api): seismic signal streams and alerts
+- [steward-api](https://github.com/prismatic-hq/steward-api): sites, crews and work orders
 
 Docs: [REQUIREMENTS.md](docs/REQUIREMENTS.md), [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -13,14 +14,17 @@ Docs: [REQUIREMENTS.md](docs/REQUIREMENTS.md), [ARCHITECTURE.md](docs/ARCHITECTU
 
 | Path | Contents |
 |---|---|
-| `caldera_platform/stacks/` | CDK stacks: Network, Cluster, Data, Dns, Registry, CiAccess, AddonIdentity, GitOpsBridge |
-| `charts/prismatic-service/` | Shared Helm chart for the services |
-| `contracts/events/` | CloudEvents 1.0 envelope profile, event registry, data schemas |
-| `seeder/` | `golden-seeder` package for the golden database snapshot |
+| `caldera/` | CDK stacks and cdk-nag suppressions (`nag_suppressions.py`) |
+| `cli/` | `caldera vent resolve\|up\|down\|reset` |
+| `charts/vent/` | Helm chart for one vent |
+| `platform/` | PriorityClasses, headroom Deployment, KEDA `ScaledObject` |
+| `seeder/`, `images/golden-db/` | Golden dataset and golden DB image |
+| `contracts/events/` | CloudEvents envelope, registry, data schemas and examples |
+| `e2e/`, `local/`, `scripts/` | E2E suite, kind + Tilt, `verify_clean.py` |
 
 ## Quick Start
 
-Requires `uv`, `task`, Node.js and Helm.
+Requires `uv`, `task`, Docker, Helm and Node.js.
 
 ```sh
 task init && task test
@@ -30,9 +34,8 @@ task init && task test
 
 | Command | What it does |
 |---|---|
-| `task init` | Install dependencies and git hooks |
-| `task test` | CDK and seeder tests, `helm lint`, event contract validation |
-| `task lint` | ruff lint and format check |
-| `task build` | `cdk synth` into `cdk.out` |
-| `task dev` | List stacks and their dependencies |
-| `task up` / `task down` | `cdk deploy --all` / `cdk destroy --all` (needs AWS credentials) |
+| `task test` | pytest, helm unittest, ct lint, kubeconform, trivy config |
+| `task synth` | `cdk synth` with cdk-nag `AwsSolutionsChecks` |
+| `task local:up` / `task local:down` | kind cluster with Cilium, KEDA and `platform/` |
+| `task verify:clean` | Fail if AWS resources remain after `cdk destroy` |
+| `uv run caldera vent up ... --dry-run` | Print the Helm command for a vent |
