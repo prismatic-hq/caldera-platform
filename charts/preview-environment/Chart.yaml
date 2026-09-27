@@ -1,0 +1,8 @@
+apiVersion: v2
+name: preview-environment
+description: One preview environment with tremor-api, steward-api and a golden Postgres
+type: application
+version: 0.3.0
+appVersion: "0.1.0"
+maintainers:
+  - name: ryanmcafee

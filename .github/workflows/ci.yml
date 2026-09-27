@@ -64,13 +64,13 @@ jobs:
           fetch-depth: 0
       - run: >-
           docker run --rm -v "$PWD:/repo" -w /repo "$CT_IMAGE"
-          sh -c 'git config --global --add safe.directory "*" && ct lint --charts charts/vent --target-branch main'
+          sh -c 'git config --global --add safe.directory "*" && ct lint --charts charts/preview-environment --target-branch main'
 
   chart-unittest:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/apps" "$HELM_UNITTEST_IMAGE" charts/vent
+      - run: docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/apps" "$HELM_UNITTEST_IMAGE" charts/preview-environment
 
   manifests:
     runs-on: ubuntu-latest
@@ -82,9 +82,9 @@ jobs:
       - name: Render vent examples and platform manifests
         run: |
           mkdir -p rendered
-          for values in charts/vent/ci/*-values.yaml; do
+          for values in charts/preview-environment/ci/*-values.yaml; do
             name=$(basename "$values" .yaml)
-            helm template "vent-$name" charts/vent -n "vent-$name" -f "$values" > "rendered/$name.yaml"
+            helm template "preview-$name" charts/preview-environment -n "preview-$name" -f "$values" > "rendered/$name.yaml"
           done
           cp platform/*.yaml rendered/
       - run: docker run --rm -v "$PWD/rendered:/r" "$KUBECONFORM_IMAGE" -strict -summary -ignore-missing-schemas /r
