@@ -1,4 +1,5 @@
 import os
+from collections.abc import Iterator
 
 import httpx
 import pytest
@@ -6,23 +7,33 @@ import pytest
 BASE_URL_TEMPLATE = os.getenv("PREVIEW_BASE_URL", "")
 
 
-@pytest.fixture(autouse=True)
-def require_preview_environment() -> None:
-    if not BASE_URL_TEMPLATE:
-        pytest.skip("PREVIEW_BASE_URL is not set")
-
-
 def service_url(service: str) -> str:
-    return BASE_URL_TEMPLATE.format(service=service)
+    """`<SERVICE>_URL` set by the services chart in-cluster, else PREVIEW_BASE_URL."""
+    explicit = os.getenv(f"{service.upper().replace('-', '_')}_URL", "")
+    return explicit or BASE_URL_TEMPLATE.format(service=service)
 
 
 @pytest.fixture
-def tremor() -> httpx.Client:
-    with httpx.Client(base_url=service_url("tremor"), timeout=10) as client:
-        yield client
+def client_for() -> Iterator:
+    clients: list[httpx.Client] = []
+
+    def connect(service: str) -> httpx.Client:
+        url = service_url(service)
+        if not url:
+            pytest.skip(f"set {service.upper()}_URL or PREVIEW_BASE_URL to run against a preview")
+        clients.append(httpx.Client(base_url=url, timeout=10))
+        return clients[-1]
+
+    yield connect
+    for client in clients:
+        client.close()
 
 
 @pytest.fixture
-def steward() -> httpx.Client:
-    with httpx.Client(base_url=service_url("steward"), timeout=10) as client:
-        yield client
+def tremor(client_for) -> httpx.Client:
+    return client_for("tremor")
+
+
+@pytest.fixture
+def steward(client_for) -> httpx.Client:
+    return client_for("steward")

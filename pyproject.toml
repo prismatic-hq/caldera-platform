@@ -20,6 +20,7 @@ dev = [
     "check-jsonschema>=0.38",
     "jsonschema>=4.25",
     "pre-commit>=4.3",
+    "prismatic-e2e",
     "pytest>=8.4",
     "pyyaml>=6",
     "ruff>=0.14",
@@ -29,11 +30,12 @@ dev = [
 package = false
 
 [tool.uv.workspace]
-members = ["cli", "seeder"]
+members = ["cli", "seeder", "e2e"]
 
 [tool.uv.sources]
 preview-cli = { workspace = true }
 golden-seeder = { workspace = true }
+prismatic-e2e = { workspace = true }
 
 [tool.ruff]
 line-length = 100

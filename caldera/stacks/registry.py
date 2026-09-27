@@ -5,6 +5,7 @@ from constructs import Construct
 from caldera.config import PlatformConfig
 
 GOLDEN_DB = "golden-db"
+E2E = "e2e"
 BUILD_CACHE = "build-cache"
 GOLDEN_DB_VERSIONS_KEPT = 10
 
@@ -62,7 +63,7 @@ def _image_repository(
 
 
 class RegistryStack(Stack):
-    """ECR repositories for the services, golden-db and the build cache."""
+    """ECR repositories for the services, golden-db, the e2e suite and the build cache."""
 
     def __init__(
         self, scope: Construct, construct_id: str, *, config: PlatformConfig, **kwargs
@@ -75,6 +76,7 @@ class RegistryStack(Stack):
         self.golden_db = _image_repository(
             self, "GoldenDb", GOLDEN_DB, "latest", keep_tagged=GOLDEN_DB_VERSIONS_KEPT
         )
+        self.e2e = _image_repository(self, "E2e", E2E, "main")
         self.build_cache = ecr.Repository(
             self,
             "BuildCache",
@@ -93,4 +95,4 @@ class RegistryStack(Stack):
 
     @property
     def all_repositories(self) -> list[ecr.IRepository]:
-        return [*self.service_repositories.values(), self.golden_db, self.build_cache]
+        return [*self.service_repositories.values(), self.golden_db, self.e2e, self.build_cache]

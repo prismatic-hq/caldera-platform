@@ -113,3 +113,62 @@ jobs:
         env:
           KIND_CONTEXT: kind-runner-access
         run: uv run pytest tests/integration -q
+
+  e2e-image:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository_owner == 'prismatic-hq'
+    needs: [lint, test]
+    runs-on: caldera-platform-runners
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      IMAGE_NAME: e2e
+      BUILD_CACHE_REPOSITORY: build-cache
+    steps:
+      - id: config
+        name: Check workflow configuration
+        run: |
+          if [ -z "$AWS_REGION" ]; then
+            echo "::error::$GITHUB_REPOSITORY is missing variable AWS_REGION. Set it at repository level; private repos on GitHub Free cannot read organization variables."
+            exit 1
+          fi
+      - uses: actions/checkout@v7
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v4
+      - id: image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          repository="$REGISTRY/$IMAGE_NAME"
+          tag="sha-${GITHUB_SHA::7}"
+          if result=$(docker buildx imagetools inspect "$repository:$tag" 2>&1); then
+            exists=true
+          elif grep -qi "not found" <<<"$result"; then
+            exists=false
+          else
+            echo "::error::cannot check $repository:$tag in ECR: $result"
+            exit 1
+          fi
+          {
+            echo "exists=$exists"
+            echo "repository=$repository"
+            echo "tag=$tag"
+            echo "cache=$REGISTRY/$BUILD_CACHE_REPOSITORY:$IMAGE_NAME"
+          } >> "$GITHUB_OUTPUT"
+      - if: steps.image.outputs.exists != 'true'
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+      - if: steps.image.outputs.exists != 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: images/e2e/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.image.outputs.repository }}:${{ steps.image.outputs.tag }}
+          cache-from: type=registry,ref=${{ steps.image.outputs.cache }}
+          cache-to: type=registry,ref=${{ steps.image.outputs.cache }},mode=max,image-manifest=true,oci-mediatypes=true
+      - env:
+          REPOSITORY: ${{ steps.image.outputs.repository }}
+          TAG: ${{ steps.image.outputs.tag }}
+        run: docker buildx imagetools create --tag "$REPOSITORY:main" "$REPOSITORY:$TAG"
