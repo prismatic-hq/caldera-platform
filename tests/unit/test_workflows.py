@@ -137,3 +137,12 @@ def test_ci_runs_once_per_pull_request_commit() -> None:
     triggers = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())[True]
     assert triggers["push"] == {"branches": ["main"]}
     assert "pull_request" in triggers
+
+
+def test_kind_cleanup_failure_does_not_fail_ephemeral_runner_jobs() -> None:
+    kind = next(
+        step
+        for step in jobs("ci.yml")["runner-access"]["steps"]
+        if step.get("uses", "").startswith("helm/kind-action")
+    )
+    assert kind["with"]["ignore_failed_clean"] is True
