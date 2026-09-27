@@ -54,7 +54,9 @@ jobs:
       - run: npx --yes aws-cdk@2 synth --quiet
       - name: cdk-nag suppression count
         run: |
-          uv run python -c "from caldera.nag_suppressions import SUPPRESSIONS as s; print('cdk-nag suppressions:', len(s))"
+          jq -rs '[.[].Resources[]? | .Metadata.cdk_nag.rules_to_suppress[]?
+            | select(.id | startswith("AwsSolutions-"))] | "cdk-nag suppressions: \(length)"' \
+            cdk.out/*.template.json
 
   chart-lint:
     runs-on: ubuntu-latest

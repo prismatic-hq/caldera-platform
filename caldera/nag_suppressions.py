@@ -1,7 +1,21 @@
-from dataclasses import dataclass
+"""Every cdk-nag suppression in the app. Policy: REQUIREMENTS.md Section 4c.
 
-from aws_cdk import Acknowledgment, Validations
+Two explicit categories plus one derived from the policy documents themselves:
+- IAM4 on the EKS cluster and node roles, for the managed policies EKS requires.
+- IAM5 ``Resource::*`` on statements whose actions have no resource-level permissions.
+- IAM5 on an ARN scoped to one resource type in this account and region, for resources
+  controllers create at runtime (their IDs cannot be known at synth time).
+"""
+
+import re
+from dataclasses import dataclass
+from fnmatch import fnmatch
+
+from aws_cdk import Acknowledgment, CfnResource, Stack, Validations
+from aws_cdk import aws_iam as iam
 from constructs import IConstruct
+
+SAR_DOCS = "https://docs.aws.amazon.com/service-authorization/latest/reference/reference_policies_actions-resources-contextkeys.html"
 
 
 @dataclass(frozen=True)
@@ -13,8 +27,113 @@ class Suppression:
 
 SUPPRESSIONS: list[Suppression] = []
 
+ACTIONS_WITHOUT_RESOURCE_LEVEL_PERMISSIONS = (
+    "ec2:Describe*",
+    "ecr:GetAuthorizationToken",
+    "ecr-public:GetAuthorizationToken",
+    "elasticloadbalancing:Describe*",
+    "pricing:GetProducts",
+    "route53:ListHostedZones",
+    "route53:ListHostedZonesByName",
+    "sts:GetServiceBearerToken",
+)
+PARTITION = r"(<AWS::Partition>|aws[a-z-]*)"
+REGION = r"(<AWS::Region>|[a-z]{2}(-[a-z]+)+-\d)?"
+ACCOUNT = r"(<AWS::AccountId>|\d{12})?"
+SCOPED_WILDCARD_ARN = re.compile(
+    rf"^arn:{PARTITION}:[a-z0-9-]+:{REGION}:{ACCOUNT}:[a-z-]+[/:][^*]*\*$"
+)
+FUNCTION_QUALIFIER_WILDCARD = re.compile(r"^<[A-Za-z0-9]+\.Arn>:\*$")
 
-def apply_suppressions(root: IConstruct, suppressions: list[Suppression] = SUPPRESSIONS) -> None:
+
+def flatten(reference: object) -> str:
+    """Mirror cdk-nag's flattenCfnReference so findings match its IDs exactly."""
+    if isinstance(reference, str):
+        return reference.replace("${", "<").replace("}", ">")
+    if isinstance(reference, dict):
+        if "Fn::Join" in reference:
+            delimiter, items = reference["Fn::Join"]
+            return delimiter.join(flatten(item) for item in items)
+        if "Fn::Sub" in reference:
+            return flatten(reference["Fn::Sub"])
+        if "Fn::GetAtt" in reference:
+            resource, attribute = reference["Fn::GetAtt"]
+            return f"<{flatten(resource)}.{flatten(attribute)}>"
+        if "Fn::ImportValue" in reference:
+            return flatten(reference["Fn::ImportValue"])
+        if "Ref" in reference:
+            return f"<{flatten(reference['Ref'])}>"
+    return str(reference)
+
+
+def _as_list(value: object) -> list:
+    return value if isinstance(value, list) else [value]
+
+
+def is_allowlisted_action(action: str) -> bool:
+    return any(fnmatch(action, allowed) for allowed in ACTIONS_WITHOUT_RESOURCE_LEVEL_PERMISSIONS)
+
+
+def is_scoped_wildcard(resource: str) -> bool:
+    return bool(SCOPED_WILDCARD_ARN.match(resource) or FUNCTION_QUALIFIER_WILDCARD.match(resource))
+
+
+def allowed_iam5_findings(documents: list[dict]) -> set[str]:
+    statements = [
+        statement
+        for document in documents
+        for statement in document.get("Statement", [])
+        if statement.get("Effect") == "Allow"
+    ]
+    findings: set[str] = set()
+    wildcard_actions = [
+        action
+        for statement in statements
+        if "*" in map(flatten, _as_list(statement.get("Resource", [])))
+        for action in _as_list(statement.get("Action", []))
+    ]
+    if wildcard_actions and all(map(is_allowlisted_action, wildcard_actions)):
+        findings.add("Resource::*")
+    for statement in statements:
+        for resource in map(flatten, _as_list(statement.get("Resource", []))):
+            if resource != "*" and is_scoped_wildcard(resource):
+                findings.add(f"Resource::{resource}")
+        for action in _as_list(statement.get("Action", [])):
+            if "*" in action and is_allowlisted_action(action):
+                findings.add(f"Action::{action}")
+    return findings
+
+
+def _policy_documents(resource: CfnResource) -> list[dict]:
+    stack = Stack.of(resource)
+    if isinstance(resource, iam.CfnRole):
+        policies = resource.policies if isinstance(resource.policies, list) else []
+        return [stack.resolve(policy.policy_document) for policy in policies]
+    if isinstance(resource, iam.CfnPolicy | iam.CfnManagedPolicy):
+        return [stack.resolve(resource.policy_document)]
+    return []
+
+
+def iam5_suppressions(root: IConstruct) -> list[Suppression]:
+    return [
+        Suppression(
+            path=construct.node.path,
+            finding_id=f"AwsSolutions-IAM5[{finding}]",
+            reason=(
+                f"No resource-level permissions for these actions: {SAR_DOCS}"
+                if finding.startswith(("Resource::*", "Action::"))
+                else "Scoped to one resource type in this account and region; the IDs are "
+                "created at runtime by the controller"
+            ),
+        )
+        for construct in root.node.find_all()
+        if isinstance(construct, CfnResource)
+        for finding in sorted(allowed_iam5_findings(_policy_documents(construct)))
+    ]
+
+
+def apply_suppressions(root: IConstruct, suppressions: list[Suppression] | None = None) -> None:
+    suppressions = SUPPRESSIONS + iam5_suppressions(root) if suppressions is None else suppressions
     constructs = {construct.node.path: construct for construct in root.node.find_all()}
     for suppression in suppressions:
         if suppression.path not in constructs:
