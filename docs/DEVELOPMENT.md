@@ -13,7 +13,7 @@ python3 setup.py
    or at `~/.local/bin/mise` ([getting started](https://mise.jdx.dev/getting-started.html)).
 2. `mise trust` approves this repo's `mise.toml`.
 3. `mise install` installs the pinned tools: Python, uv, Node.js (for `npx aws-cdk`), AWS CLI v2,
-   1Password CLI (`op`), GitHub CLI, kubectl, Helm, jq, kind and Tilt.
+   1Password CLI (`op`), GitHub CLI, kubectl, kubectx, Helm, jq, kind and Tilt.
 4. `mise run init` installs the Python dependencies (`uv sync --locked`) and git hooks.
 
 ## Tasks
