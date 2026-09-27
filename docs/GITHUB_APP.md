@@ -42,7 +42,7 @@ once. Its credentials go to SSM Parameter Store, and External Secrets syncs them
 Run this after every fresh deploy. The network sweeper deletes `/prismatic/` on destroy.
 
 ```sh
-task secrets:put -- --app-id <app-id> --installation-id <installation-id> \
+mise run secrets:put -- --app-id <app-id> --installation-id <installation-id> \
   --private-key-file ~/Downloads/<app-name>.<date>.private-key.pem
 ```
 
@@ -63,5 +63,5 @@ Each job mints a one-hour, contents-read installation token with
 ## Rotate the key
 
 1. Generate a new private key on the app page.
-2. Run `task secrets:put` with the new `.pem` and update `CALDERA_APP_PRIVATE_KEY`.
+2. Run `mise run secrets:put` with the new `.pem` and update `CALDERA_APP_PRIVATE_KEY`.
 3. Delete the old key on the app page.

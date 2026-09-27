@@ -16,7 +16,7 @@ to a system node. Access works in any AWS account and does not depend on SSO per
 
 ## Required permissions
 
-The principal running `task kube:connect` needs:
+The principal running `mise run kube:connect` needs:
 
 - `sts:AssumeRole` on `ClusterAdminRole`
 - `ssm:StartSession` on the system node instances and on the
@@ -32,11 +32,11 @@ The principal running `task kube:connect` needs:
 ## Connect
 
 ```sh
-task kube:connect                      # leave running; Ctrl-C closes the tunnel
+mise run kube:connect                      # leave running; Ctrl-C closes the tunnel
 kubectl --context caldera get nodes    # in a second terminal
 ```
 
-`task kube:connect -- --port 9443 --cluster caldera --stack CalderaCluster` overrides the
+`mise run kube:connect -- --port 9443 --cluster caldera --stack CalderaCluster` overrides the
 defaults. Each run picks the newest running system node and rewrites only the `caldera` entries
 in your kubeconfig (`$KUBECONFIG` or `~/.kube/config`). Tokens come from
 `aws eks get-token --role-arn <ClusterAdminRoleArn>`, so kubectl assumes the role on each call.
