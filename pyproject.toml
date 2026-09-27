@@ -7,6 +7,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "aws-cdk-lib>=2.270.0,<3.0.0",
     "cdk-nag>=3.0.2,<4",
+    "caldera-cli",
     "constructs>=10.5.0,<11.0.0",
 ]
 
@@ -21,6 +22,13 @@ dev = [
 [tool.uv]
 package = false
 
+[tool.uv.workspace]
+members = ["cli", "seeder"]
+
+[tool.uv.sources]
+caldera-cli = { workspace = true }
+golden-seeder = { workspace = true }
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
@@ -33,6 +41,6 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 known-first-party = ["caldera", "caldera_cli", "golden_seeder"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-ra"
+testpaths = ["tests", "cli/tests"]
+addopts = "-ra --import-mode=importlib"
 pythonpath = ["."]
