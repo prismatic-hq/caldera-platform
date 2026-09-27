@@ -1,5 +1,6 @@
 # Push a second feature branch (steward-api) and watch headroom pods and Karpenter NodeClaims.
-# Run from the caldera-platform root: vhs docs/media/tapes/capacity-watch.tape
+# Run from the caldera-platform root with STEWARD_API_DIR set to a steward-api checkout on feature/tsunami:
+# vhs docs/media/tapes/capacity-watch.tape
 Output docs/media/raw/capacity-watch.mp4
 Set Shell bash
 Set FontSize 14
@@ -10,7 +11,7 @@ Set TypingSpeed 25ms
 Set Padding 10
 
 Hide
-Type `export GIT_PAGER=cat GH_PAGER=cat PAGER=cat PS1='$ ' T=$PWD/docs/media/tapes && cd /Users/ryanmcafee/Projects/.worktrees/steward-api-tsunami && tmux -L rec -f $T/tmux.conf new-session -s rec \; split-window -h \; send-keys "$T/watch-capacity.sh" Enter \; select-pane -t 0 \; send-keys clear Enter` Enter
+Type `export GIT_PAGER=cat GH_PAGER=cat PAGER=cat PS1='$ ' T=$PWD/docs/media/tapes && cd "$STEWARD_API_DIR" && tmux -L rec -f $T/tmux.conf new-session -s rec \; split-window -h \; send-keys "$T/watch-capacity.sh" Enter \; select-pane -t 0 \; send-keys clear Enter` Enter
 Sleep 3s
 Show
 

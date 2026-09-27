@@ -1,5 +1,6 @@
 # Push a feature branch in tremor-api and watch its preview environment come up.
-# Run from the caldera-platform root: vhs docs/media/tapes/commit-push-namespace.tape
+# Run from the caldera-platform root with TREMOR_API_DIR set to a tremor-api checkout on feature/quake-alerts:
+# vhs docs/media/tapes/commit-push-namespace.tape
 Output docs/media/raw/commit-push-namespace.mp4
 Set Shell bash
 Set FontSize 14
@@ -10,7 +11,7 @@ Set TypingSpeed 25ms
 Set Padding 10
 
 Hide
-Type `export GIT_PAGER=cat GH_PAGER=cat PAGER=cat PS1='$ ' T=$PWD/docs/media/tapes && cd /Users/ryanmcafee/Projects/.worktrees/tremor-api-quake-alerts && tmux -L rec -f $T/tmux.conf new-session -s rec \; split-window -h \; send-keys "$T/watch-env.sh quake-alerts" Enter \; select-pane -t 0 \; send-keys clear Enter` Enter
+Type `export GIT_PAGER=cat GH_PAGER=cat PAGER=cat PS1='$ ' T=$PWD/docs/media/tapes && cd "$TREMOR_API_DIR" && tmux -L rec -f $T/tmux.conf new-session -s rec \; split-window -h \; send-keys "$T/watch-env.sh quake-alerts" Enter \; select-pane -t 0 \; send-keys clear Enter` Enter
 Sleep 3s
 Show
 
