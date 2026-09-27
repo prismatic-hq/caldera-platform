@@ -1,8 +1,8 @@
 # caldera-platform
 
-Platform for Prismatic HQ preview environments ("vents"). AWS CDK (Python) provisions EKS with
-Cilium and Karpenter; each vent is a namespace plus a Helm release deployed from CI by the
-`caldera` CLI.
+Platform for Prismatic HQ preview environments. AWS CDK (Python) provisions EKS with Cilium and
+Karpenter; each preview environment is a namespace plus a Helm release deployed from CI by the
+`preview` CLI.
 
 Related repos:
 - [tremor-api](https://github.com/prismatic-hq/tremor-api): seismic signal streams and alerts
@@ -15,8 +15,8 @@ Docs: [REQUIREMENTS.md](docs/REQUIREMENTS.md), [ARCHITECTURE.md](docs/ARCHITECTU
 | Path | Contents |
 |---|---|
 | `caldera/` | CDK stacks and cdk-nag suppressions (`nag_suppressions.py`) |
-| `cli/`, `services.yaml` | `caldera vent resolve\|up\|down\|reset` and the service registry it reads |
-| `charts/vent/` | Helm chart for one vent |
+| `cli/`, `services.yaml` | `preview env resolve\|up\|down\|reset` and the service registry it reads |
+| `charts/preview-environment/` | Helm chart for one preview environment |
 | `platform/` | PriorityClasses, headroom Deployment, KEDA `ScaledObject` |
 | `seeder/`, `images/golden-db/` | Golden dataset and golden DB image |
 | `contracts/events/` | CloudEvents envelope, registry, data schemas and examples |
@@ -38,4 +38,4 @@ task init && task test
 | `task synth` | `cdk synth` with cdk-nag `AwsSolutionsChecks` |
 | `task local:up` / `task local:down` | kind cluster with Cilium, KEDA and `platform/` |
 | `task verify:clean` | Fail if AWS resources remain after `cdk destroy` |
-| `uv run caldera vent up ... --dry-run` | Print the Helm command for a vent |
+| `uv run preview env up ... --dry-run` | Print the Helm command for a preview environment |

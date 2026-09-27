@@ -119,7 +119,7 @@ def test_offline_up_without_every_sha_fails_clearly() -> None:
     assert "--offline needs --sha-for steward=<sha>" in output
 
 
-def test_down_dry_run_cools_vent_when_no_branch_remains() -> None:
+def test_down_dry_run_tears_down_when_no_branch_remains() -> None:
     code, output = invoke(
         "env",
         "down",

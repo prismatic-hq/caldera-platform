@@ -149,7 +149,7 @@ def test_resolve_push(
             "feature/quake-alerts",
             set(),
             PreviewPlan("quake-alerts", Action.DOWN),
-            id="feature deleted, no branch left: cool",
+            id="feature deleted, no branch left: tear down",
         ),
         pytest.param(
             TWO,
@@ -157,7 +157,7 @@ def test_resolve_push(
             "fix-crew-sync",
             {"tremor"},
             PreviewPlan("steward-fix-crew-sync", Action.DOWN),
-            id="non-feature branch deleted: cool",
+            id="non-feature branch deleted: tear down",
         ),
         pytest.param(
             THREE,
