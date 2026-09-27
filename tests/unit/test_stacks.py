@@ -545,3 +545,33 @@ def test_preview_domain_is_published_for_the_cli(templates) -> None:
 
 def _as_list(value: object) -> list:
     return value if isinstance(value, list) else [value]
+
+
+CILIUM_ENI_DESCRIBE_ACTIONS = {
+    "ec2:DescribeInstances",
+    "ec2:DescribeInstanceTypes",
+    "ec2:DescribeNetworkInterfaces",
+    "ec2:DescribeRouteTables",
+    "ec2:DescribeSecurityGroups",
+    "ec2:DescribeSubnets",
+    "ec2:DescribeTags",
+    "ec2:DescribeVpcs",
+}
+
+
+def test_cilium_operator_can_describe_everything_eni_ipam_reads(templates) -> None:
+    cluster = templates["Cluster"]
+    [role_id] = [
+        logical_id
+        for logical_id in resources(cluster, "AWS::IAM::Role")
+        if logical_id.startswith("CiliumOperatorRole")
+    ]
+    granted = {
+        action
+        for statement in role_statements(cluster, role_id)
+        if statement["Effect"] == "Allow" and statement["Resource"] == "*"
+        for action in (
+            statement["Action"] if isinstance(statement["Action"], list) else [statement["Action"]]
+        )
+    }
+    assert granted >= CILIUM_ENI_DESCRIBE_ACTIONS, CILIUM_ENI_DESCRIBE_ACTIONS - granted
