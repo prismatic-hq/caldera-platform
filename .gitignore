@@ -7,7 +7,6 @@ __pycache__
 # CDK asset staging directory
 .cdk.staging
 cdk.out
-cdk.context.json
 .env
 .ruff_cache
 .rendered
