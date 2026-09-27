@@ -1,511 +1,433 @@
 # Prismatic HQ -- Preview Environment Platform Requirements
 
+Chosen approach: **AWS CDK (Python) provisions an EKS platform; vents are Helm releases deployed from CI, optimized for delivery speed and short cycle time.**
+Primary goal: a developer pushes a branch and has working, seeded, isolated URLs in minutes, and every later push lands in about a minute.
+
 Repos:
-| Repo | Owns | Written by |
-|---|---|---|
-| `prismatic-hq/caldera-platform` | CDK, addons, ApplicationSets, AppProjects, shared service Helm chart, `golden-seeder` | Humans via PR |
-| `prismatic-hq/applications-infra` | Desired state of every service in every environment (dev, staging, prod, single-tenant, vents). Data only. | Automation direct to `main`; humans via PR |
-| `prismatic-hq/tremor-api` | Seismic signal streams and alerts: FastAPI CRUD, Dockerfile, migrations | Humans via PR |
-| `prismatic-hq/steward-api` | Resource and operations management: FastAPI CRUD, Dockerfile, migrations | Humans via PR |
+| Repo | Owns |
+|---|---|
+| `prismatic-hq/caldera-platform` | CDK app (VPC, EKS, addons, ECR, IAM), the `vent` Helm chart, the `caldera` CLI, reusable workflows, `golden-seeder`, golden DB image build, E2E suite, CloudEvents contracts, local dev (kind + Tilt) |
+| `prismatic-hq/tremor-api` | Seismic signal streams and alerts. FastAPI CRUD, Dockerfile, Alembic migrations |
+| `prismatic-hq/steward-api` | Resource and operations management (sites, crews, work orders). FastAPI CRUD, Dockerfile, Alembic migrations |
 
 Vocabulary:
-- **Vent**: one isolated preview environment.
-- **Eruption**: a feature group. Branches named `feature/<name>` with the same `<name>` in more than one repo share one vent.
+- **Vent**: one isolated preview environment = one namespace `vent-<name>` + one Helm release.
+- **Eruption**: a feature group. Branches named `feature/<name>` with the same `<name>` in both service repos share one vent.
 - **Cooling**: teardown of a vent.
-- **Baseline**: the long-lived `dev` environment built from `main` of every repo.
-- **Golden snapshot**: the nightly, deterministic EBS VolumeSnapshot of a seeded Postgres database that every vent starts from.
+- **Baseline**: the long-lived `dev` environment built from `main` of both repos.
+- **Golden DB image**: a Postgres image with the deterministic seed dataset baked into its data directory, tagged by `dataset-version`.
+- **Headroom**: low-priority placeholder pods that hold spare node capacity so real vents schedule instantly.
 
 ---
 
-## 1. Functional Requirements
+## 1. Cycle Time Budget
 
-### FR-1 Baseline infrastructure
-| ID | Requirement |
-|---|---|
-| FR-1.1 | AWS CDK (Python) provisions every foundational AWS coupling point: VPC, EKS, IAM (Pod Identity roles per addon), ECR, Route 53 zone, S3 buckets, Secrets Manager entries, GitHub OIDC roles. |
-| FR-1.2 | CDK bootstraps Argo CD and hands infrastructure metadata to it through the GitOps Bridge contract (Section 4). After bootstrap, CDK never deploys addons or workloads. |
-| FR-1.3 | Argo CD installs all addons (Section 6) and workloads from Git (App of Apps + ApplicationSets). |
-| FR-1.4 | Crossplane with the AWS provider manages AWS resources that belong to an application or a vent (Section 7). CDK and Crossplane never manage the same resource. |
-| FR-1.5 | Each service is a FastAPI CRUD app backed by Postgres, shipped as a container image with a Dockerfile: `tremor-api` manages seismic signal streams and alerts; `steward-api` manages resources and operations (sites, crews, work orders). |
-| FR-1.6 | Both services share one Postgres cluster per environment. Each service owns its own schema and runs its own migrations. |
-| FR-1.7 | The baseline `dev` environment always runs `main` of both services. |
+Targets (estimates until measured; FR-9 measures them on every run):
 
-### FR-2 Build and publish (GitHub Actions)
-| ID | Requirement |
-|---|---|
-| FR-2.1 | Every push to any branch and every PR update builds, tests, scans and pushes an image to ECR. |
-| FR-2.2 | Images are tagged immutably by commit: `sha-<short-sha>`. Mutable convenience tags: `branch-<slug>`, `pr-<number>`, `main`. |
-| FR-2.3 | GitHub Actions authenticates to AWS through OIDC. No long-lived AWS keys exist in GitHub. |
-| FR-2.4 | PRs from forks build and test but never push images or receive secrets. |
-| FR-2.5 | A merge to `main` publishes a `main` image that Kargo picks up as new Freight. |
-| FR-2.6 | CI publishes an SBOM and signs each image (cosign, keyless via GitHub OIDC). |
-| FR-2.7 | CI builds and publishes the `golden-seeder` image on changes to its source. |
+| Stage | Lever | Target |
+|---|---|---|
+| CI start | In-cluster runners (ARC) with warm minimum | under 10s |
+| Build changed service only | BuildKit cache in ECR, `uv` cache, shared base image, skip if `sha-<commit>` exists | 45-90s |
+| Push image | Runner and ECR in the same region/VPC path | 5-15s |
+| Resolve feature group + `helm upgrade --install` | `caldera` CLI, in-cluster credentials | 5-10s |
+| Schedule pods | Headroom placeholders preempted instantly | under 5s |
+| Pull images | Pre-pull DaemonSet for `main`, shared base and golden DB images; a push ships only a small app layer | 1-5s |
+| Database ready | Golden DB image on `emptyDir`, no PVC, no restore, no seed step | 5-10s |
+| Migrations | Branch migrations only (golden already at `main` head) | 5-15s |
+| Readiness | `startupProbe`/`readinessProbe` at 2s period | 5-10s |
+| Route live | Gateway API `HTTPRoute` on Envoy Gateway (xDS config push, no load balancer change); wildcard DNS and certificate, no per-vent DNS or certificate | under 2s |
+| **New vent, image already built** | | **p90 under 60s** |
+| **Push to URL with branch code** | | **p90 under 3 minutes** |
+| **Push to an existing vent** | | **p90 under 2 minutes** |
+| Teardown | `helm uninstall` + namespace delete | under 60s |
 
-### FR-3 Vent lifecycle (Argo CD ApplicationSets)
-| ID | Requirement |
-|---|---|
-| FR-3.1 | Pushing a non-`main` branch in either service repo creates a vent within the provisioning SLO (NFR-1.1). |
-| FR-3.2 | A vent runs the pushed branch for the repo that has one, and `main` for every repo that does not. |
-| FR-3.3 | Branches named `feature/<name>` with the same `<name>` in both repos resolve to one vent named `<name>`, running both branches. Any other branch name gets its own vent named after the sanitized branch. |
-| FR-3.4 | Branches in both repos that do not share an eruption name produce separate vents, one per branch. |
-| FR-3.5 | A new push to a branch redeploys that vent with the new image tag. |
-| FR-3.6 | Deleting or merging a branch cools the vent: Argo CD Applications, namespace, database, Crossplane-managed AWS resources, DNS records and secrets are removed. |
-| FR-3.7 | A vent that is idle beyond its TTL (default 72h without a push) cools automatically. |
-| FR-3.8 | Each vent gets stable URLs: `https://<service>-<vent>.preview.<domain>`. One level under `preview` so a single wildcard certificate covers every vent. |
-| FR-3.9 | When a PR exists for the branch, the platform posts the vent URLs and status to the PR (GitHub Deployments API or Argo CD Notifications). |
-| FR-3.10 | Vent names are sanitized to DNS-1123 labels (lowercase, `[a-z0-9-]`). `<service>-<vent>` must fit in 63 characters. A name that cannot be sanitized fails with a clear error naming the limit. |
-
-### FR-4 Vent database
-| ID | Requirement |
-|---|---|
-| FR-4.1 | Each vent gets its own CloudNativePG (CNPG) Postgres cluster. No vent can read or write another vent's data or the baseline's data. |
-| FR-4.2 | A vent database bootstraps from the golden snapshot version pinned in the vent config (default: latest verified snapshot at vent creation). |
-| FR-4.3 | Each service's branch migrations run against the vent database before the service receives traffic (Argo CD PreSync Job). |
-| FR-4.4 | A vent database can be reset to its pinned golden snapshot on demand without recreating the vent. |
-| FR-4.5 | Production data never enters a vent or the golden snapshot. All golden data is synthetic and fixed. |
-
-### FR-5 Golden snapshot build (Argo Workflows CronWorkflow)
-| ID | Requirement |
-|---|---|
-| FR-5.1 | A Python service, `golden-seeder`, writes a known, fixed dataset. It contains no randomness: fixed primary keys (UUIDv5 from a fixed namespace), fixed timestamps, fixed ordering. |
-| FR-5.2 | An Argo Workflows CronWorkflow runs nightly: create scratch CNPG cluster -> run `main` migrations for both services -> run `golden-seeder` -> verify -> take VolumeSnapshot -> delete scratch cluster. |
-| FR-5.3 | Verification computes a per-table content checksum (rows ordered by primary key). The checksum is stored as an annotation on the snapshot. |
-| FR-5.4 | The snapshot is labeled with `dataset-version` = hash of (`golden-seeder` image digest + both services' Alembic head revisions). Same inputs must produce the same checksum; a mismatch fails the Workflow and alerts. |
-| FR-5.5 | If the inputs hash matches the latest verified snapshot, the build still runs and must reproduce the same checksum (proves determinism), but no new snapshot is kept. |
-| FR-5.6 | The last N (default 7) verified snapshots are retained. Snapshots pinned by a live vent are never deleted. |
-| FR-5.7 | The CronWorkflow can also be triggered on demand (Argo Events webhook or `argo submit --from cronwf/...`), for example after a migration merges to `main`. |
-
-### FR-6 E2E testing (Argo Workflows + Argo Events)
-| ID | Requirement |
-|---|---|
-| FR-6.1 | An Argo Events sensor triggers the E2E Workflow on a `vent.environment.ready.v1` CloudEvent (FR-10). |
-| FR-6.2 | The E2E Workflow resets the vent database to its pinned snapshot, then runs the suite (API, and UI if present) against the vent URLs. |
-| FR-6.3 | The E2E Workflow emits `test.e2e.completed.v1`; a reporter posts it to the commit as a GitHub check run. The check can block merge through branch protection. |
-| FR-6.4 | Test artifacts (reports, logs, traces, screenshots) are stored in S3 and linked from the check run. |
-| FR-6.5 | Contract tests (Pact) verify tremor-api <-> steward-api compatibility on every PR. |
-
-### FR-7 Progressive delivery (Argo Rollouts + Kargo)
-| ID | Requirement |
-|---|---|
-| FR-7.1 | Every service deploys as an Argo Rollout, including in vents. |
-| FR-7.2 | Rollouts run metric-driven analysis from Prometheus: request success rate, p95 latency, pod restarts, and a smoke-test Job. |
-| FR-7.3 | Staging and prod use canary with traffic shifting through the Argo Rollouts Gateway API plugin (HTTPRoute weights on the Istio Gateway and waypoint). Failed analysis aborts and rolls back automatically. |
-| FR-7.4 | Vents use blue-green with a pre-promotion smoke Job and post-promotion Prometheus analysis, so a broken build shows as Degraded without a slow canary. |
-| FR-7.5 | Kargo promotes `main` Freight through stages `dev -> staging -> prod`. Promotion to prod requires manual approval. |
-| FR-7.6 | Kargo verification reuses the same AnalysisTemplates, so there is one source of truth for health gates. |
-
-### FR-8 Service mesh and ingress (Istio ambient)
-| ID | Requirement |
-|---|---|
-| FR-8.1 | Istio runs in ambient mode (istio-cni + ztunnel). Sidecar injection is not allowed anywhere. |
-| FR-8.2 | Every workload namespace, including vents, must carry `istio.io/dataplane-mode: ambient`. Kyverno enforces this and rejects `istio-injection` labels. |
-| FR-8.3 | Mesh-wide `PeerAuthentication` is `STRICT` mTLS. |
-| FR-8.4 | Each vent namespace gets a default-deny `AuthorizationPolicy`, plus allow rules for its own services, the ingress gateway, Prometheus and the E2E runner. |
-| FR-8.5 | Each vent and baseline namespace gets a waypoint proxy, required for L7 metrics, L7 authorization and Rollouts traffic shifting. |
-| FR-8.6 | North-south traffic enters through one shared Istio Gateway (Gateway API `Gateway`), exposed by an NLB, with one `HTTPRoute` per service per vent. |
-| FR-8.7 | cert-manager issues a Let's Encrypt wildcard certificate `*.preview.<domain>` (DNS-01 via Route 53) for the Gateway, plus certificates for baseline hosts. |
-| FR-8.8 | external-dns creates Route 53 records from `HTTPRoute` hostnames and removes them when a vent cools. |
-
-### FR-9 Desired state repo (`applications-infra`)
-| ID | Requirement |
-|---|---|
-| FR-9.1 | `applications-infra` is the single source of truth for what runs where: every service, every environment (dev, staging, prod, single-tenant, vents). |
-| FR-9.2 | It contains data only: environment definitions, per-service pins and values overrides. No ApplicationSets, AppProjects, RBAC or generator logic, so a write to it cannot change how Argo CD behaves or widen permissions. |
-| FR-9.3 | Each service deploys exactly one Argo CD Application per environment: `<service>-<env>`. That Application owns the service's Rollout, Service, HTTPRoute, AnalysisTemplates, migration Job, ExternalSecret and Crossplane claims. |
-| FR-9.4 | Shared per-environment resources (Namespace, CNPG Cluster, waypoint, AuthorizationPolicy, quotas) belong to one environment Application, `env-<env>`, not to any service. |
-| FR-9.5 | Every pin is an image digest plus chart version. Tags appear only as comments for readability. |
-| FR-9.6 | Vent files pin every service explicitly, including services running `main`. A service tracking `main` carries `track: main` and automation bumps its pin on each `main` merge. |
-| FR-9.7 | Automation writes directly to `main` through a GitHub App. Humans change `applications-infra` only through PRs. |
-| FR-9.8 | Each writer touches only its own files (Section 3b), validates the change against a JSON schema before pushing, and retries on push conflicts with rebase (max 5 attempts). |
-| FR-9.9 | Every automated commit carries trailers `Source-Repo`, `Source-SHA`, `Environment`, `Actor` for audit. |
-| FR-9.10 | A push to `applications-infra` triggers an Argo CD webhook, so sync starts without waiting for polling. |
-
-### FR-10 Event contract (CloudEvents)
-| ID | Requirement |
-|---|---|
-| FR-10.1 | Every platform event is a CloudEvents 1.0 event in structured JSON mode. No component emits or consumes a bespoke event shape. |
-| FR-10.2 | Every event validates against the platform envelope profile `contracts/events/envelope.v1.schema.json` (Section 3c) and its `data` validates against the schema named in `dataschema`. |
-| FR-10.3 | Every event type is registered in `contracts/events/registry.v1.yaml` with owner, schema, delivery guarantee and status. An unregistered type is rejected. |
-| FR-10.4 | Event types carry their major version in `type` (`...vent.environment.ready.v1`). Within a major version, schemas change additively only: new optional fields. Anything else is a new major version. |
-| FR-10.5 | Producers validate before publishing. Consumers validate on receipt and send invalid events to a dead-letter subject with the validation error. |
-| FR-10.6 | Delivery is at-least-once. Consumers are idempotent on `(source, id)`. |
-| FR-10.7 | Events carry the CloudEvents Distributed Tracing extension (`traceparent`), so a vent's lifecycle is one trace in Tempo from branch push to E2E result. |
-| FR-10.8 | Python producers and consumers use the CNCF `cloudevents` SDK. GitHub Actions emit through one shared composite action that wraps it. |
-| FR-10.9 | A CI contract check in `caldera-platform` validates the registry, every schema and every example event, and fails a PR that makes a breaking change within a major version. |
-| FR-10.10 | Sensors trigger on registered CloudEvent `type` values, not on raw Kubernetes object fields or raw GitHub payloads. |
+Optimistic start: on push, the workflow creates the vent with the other service's `main` image and the pushed service's previous image (or `main`) immediately, in parallel with the build. When the build finishes, only the image changes. The URL exists before the build completes.
 
 ---
 
-## 2. Non-Functional Requirements
+## 2. Functional Requirements
+
+### FR-1 Platform (CDK)
+| ID | Requirement |
+|---|---|
+| FR-1.1 | A Python CDK app in `caldera-platform` defines all AWS infrastructure. No console changes. |
+| FR-1.2 | `NetworkStack`: VPC across 2 AZs with flow logs, public subnets for the NLB, private subnets for nodes, one NAT gateway (two with the `natGateways` context flag), S3 gateway endpoint. |
+| FR-1.3 | `ClusterStack`: EKS created without the default self-managed networking addons (`bootstrapSelfManagedAddons: false`, no `vpc-cni` or `kube-proxy`), EKS Pod Identity, access entries (no `aws-auth` edits), a small managed node group for system addons, Karpenter for everything else. |
+| FR-1.3a | Cilium is the CNI, installed by CDK before any node group: ENI IPAM mode (pods get VPC IPs, so the EKS control plane reaches webhooks and APIServices on pods), ENI prefix delegation, kube-proxy replacement, and Hubble with the Hubble UI. Warm IP settings sized so a vent burst never waits on an ENI attach. |
+| FR-1.4 | `RegistryStack`: ECR repos for `tremor-api`, `steward-api`, `golden-db` and the build cache, with immutable tags and lifecycle rules (expire `sha-*` after 14 days unless deployed). |
+| FR-1.5 | `DnsStack`: Route 53 hosted zone and the Pod Identity roles for external-dns and cert-manager. The wildcard records `*.preview.<domain>` and `*.dev.<domain>` are created by external-dns (Section 4), because the gateway NLB only exists after the AWS Load Balancer Controller creates it. |
+| FR-1.6 | `CiAccessStack`: GitHub OIDC provider and roles for runner bootstrap, plus Pod Identity roles for in-cluster runners (ECR push only for service repos). |
+| FR-1.7 | `AddonsStack`: CDK installs the addons as Helm charts on the cluster (Section 4), so the whole platform comes from `cdk deploy --all`. |
+| FR-1.8 | `cdk destroy --all --force` removes everything `caldera-platform` provisioned, with no manual steps: the EKS control plane, all nodes (managed and Karpenter), the NAT gateway, the gateway NLB, and every resource created at runtime by in-cluster controllers. Design in Section 4b. |
+| FR-1.9 | cdk-nag `AwsSolutionsChecks` runs as a CDK Aspect on every `cdk synth`, locally and in CI. Any unsuppressed error fails the synth, so no non-compliant template can be deployed. Design and Well-Architected coverage in Section 4c. |
+
+### FR-2 Services
+| ID | Requirement |
+|---|---|
+| FR-2.1 | Each service is a FastAPI CRUD app on Postgres: `tremor-api` (alerts), `steward-api` (work orders). Each owns its own schema (`tremor`, `steward`) and Alembic version table in the shared per-environment database. |
+| FR-2.2 | Images use one shared base image (Python slim + `uv` runtime deps) so most layers are cached on every node. |
+| FR-2.3 | Services start in under 3 seconds and expose `/healthz`, `/readyz`, `/metrics`. |
+| FR-2.4 | Services reach each other by Kubernetes Service name inside their own namespace only. |
+
+### FR-3 Build (GitHub Actions)
+| ID | Requirement |
+|---|---|
+| FR-3.1 | Every push to any branch runs lint, unit tests (Postgres via testcontainers) and the image build in parallel jobs. |
+| FR-3.2 | Builds use BuildKit with an ECR registry cache (`mode=max`) and skip the build when `sha-<commit>` already exists in ECR. |
+| FR-3.3 | Jobs run on Actions Runner Controller scale sets in the cluster, with a minimum of warm idle runners during working hours and scale to zero at night. |
+| FR-3.4 | Runners authenticate with EKS Pod Identity. No kubeconfig or AWS keys leave the cluster. |
+| FR-3.5 | PRs from forks run lint and tests on GitHub-hosted runners only; they never reach in-cluster runners, ECR or vents. |
+
+### FR-4 Vent lifecycle
+| ID | Requirement |
+|---|---|
+| FR-4.1 | Pushing a non-`main` branch in either service repo creates or updates a vent through the reusable workflow `caldera-platform/.github/workflows/vent.yml`. |
+| FR-4.2 | Feature-group resolution (Section 3): `feature/<name>` -> vent `<name>`, using the other repo's `feature/<name>` if it exists, else its `main`. Any other branch -> vent `<repo-short>-<branch-slug>` with the other service on `main`. |
+| FR-4.3 | Scenario A/B: branch in one repo only -> vent with that branch plus the other service's latest `main` digest. |
+| FR-4.4 | Scenario C1: `feature/<name>` in both repos -> one vent running both branches; the second push updates the existing vent. |
+| FR-4.5 | Scenario C2: unrelated branches in both repos -> two vents, each with the other service on `main`. |
+| FR-4.6 | Deploy = `caldera vent up`, which runs `helm upgrade --install vent-<name> charts/vent -n vent-<name> --create-namespace --wait` with both image digests and the `dataset-version`. The same command runs in CI and on a laptop. |
+| FR-4.7 | URLs: `https://<service>-<vent>.preview.<domain>`, one level under `preview` so one wildcard certificate and one wildcard DNS record cover every vent. Names that exceed the 63-character DNS label fail with a clear error. |
+| FR-4.8 | The workflow creates a GitHub Deployment per vent and posts URLs, timings and the E2E result to the commit and PR. |
+| FR-4.9 | Branch deleted (GitHub `delete` event; "automatically delete head branches" is on, so merges also fire it): if no branch in the vent remains, `caldera vent down`; otherwise redeploy with the deleted service on `main`. |
+| FR-4.10 | A nightly sweeper removes vents whose branches no longer exist or with no push for 72h. |
+| FR-4.11 | Deploys and teardowns for one vent never overlap: `concurrency: vent-<name>`, `cancel-in-progress: true` for deploys (the newest push wins), `false` for teardown. |
+
+### FR-5 Vent database
+| ID | Requirement |
+|---|---|
+| FR-5.1 | Each vent runs its own Postgres pod from the golden DB image matching its pinned `dataset-version`. |
+| FR-5.2 | The data directory lives on `emptyDir` (memory-backed for small datasets), so there is no PVC, EBS attach or restore on the critical path. |
+| FR-5.3 | A database pod restart resets the vent to golden data. This is intended: vents are disposable and deterministic. |
+| FR-5.4 | Branch migrations run as a Helm `pre-install`/`pre-upgrade` hook Job per service after the database is ready. |
+| FR-5.5 | `caldera vent reset` restarts the database pod to return a vent to golden state in seconds. |
+| FR-5.6 | Production data never enters the golden image or any vent. |
+| FR-5.7 | Each vent namespace gets a default-deny policy (ingress and egress) enforced by Cilium, plus allows for: traffic inside the namespace, ingress from the Envoy Gateway proxy pods (namespace `envoy-gateway-system`) to the two services only, and egress to CoreDNS. Postgres accepts traffic only from the vent's own service and migration pods. |
+| FR-5.8 | Each vent's Postgres sets a per-vent password from a generated Secret at startup (`ALTER ROLE` in the entrypoint), so isolation does not rest on network policy alone even though every vent starts from the same golden image. |
+
+### FR-6 Golden DB image
+| ID | Requirement |
+|---|---|
+| FR-6.1 | `golden-seeder` (Python) writes a fixed dataset: UUIDv5 keys, fixed timestamps, stable insert order, no randomness. |
+| FR-6.2 | The `golden-image` workflow (nightly and on `main` merges that change migrations) starts Postgres in the build, runs `main` migrations for both services and `golden-seeder`, verifies a per-table checksum, stops Postgres cleanly and bakes the data directory into `golden-db:<dataset-version>`. |
+| FR-6.3 | `dataset-version` = hash of seeder digest + both Alembic heads. Same inputs must give the same checksum; a mismatch fails the build. |
+| FR-6.4 | The image is capped at 1 GB compressed so pulls stay fast; the dataset is designed for tests, not volume. |
+| FR-6.5 | The pre-pull DaemonSet keeps the latest golden image on every vent node. |
+
+### FR-7 Capacity and speed
+| ID | Requirement |
+|---|---|
+| FR-7.1 | PriorityClasses: `vent-headroom` (-10, `preemptionPolicy: Never`), `vent` (100), `baseline` (1000), plus system classes for addons. |
+| FR-7.2 | A headroom Deployment of pause pods sized to at least 2 vents' requests runs on the vent NodePool. Real vent pods preempt them instantly; the evicted placeholders go Pending and Karpenter adds capacity in the background. |
+| FR-7.3 | A KEDA `ScaledObject` sizes the headroom Deployment from two triggers, taking the larger: a `cron` trigger (working-hours floor, zero at night) and a `kubernetes-workload` trigger counting running vent pods (label `app.kubernetes.io/part-of=vent`), so spare capacity grows with active vents without logic in the CLI. |
+| FR-7.4 | Karpenter NodePool `vents`: Spot and On-Demand fallback, several instance families, consolidation after 5 minutes of underuse. NodePool `baseline`: On-Demand. Both NodePools set the startup taint `node.cilium.io/agent-not-ready=true:NoExecute`, so no pod lands on a node before Cilium is ready. |
+| FR-7.5 | A pre-pull DaemonSet keeps `main` service images, the shared base image and the golden DB image on every vent node. If measured pulls on new nodes become significant, use a Bottlerocket data-volume snapshot with pre-cached images in the Karpenter node class. |
+| FR-7.6 | Vent pods set tight requests (for example 100m CPU / 256Mi per service, 250m / 512Mi for Postgres) so one node holds many vents. |
+
+### FR-8 E2E testing
+| ID | Requirement |
+|---|---|
+| FR-8.1 | A pytest E2E suite (run with `pytest-xdist`) exercises both APIs and one cross-service flow (a tremor alert creates a steward work order). |
+| FR-8.2 | E2E runs as an in-cluster Job right after the vent is ready, calling services by in-cluster name, and reports a GitHub check that can be required for merge. |
+| FR-8.3 | Every run starts from golden data (`caldera vent reset` first when the vent already existed). |
+| FR-8.4 | Isolation test: from vent A, connections to vent B's Postgres and services and to `dev` must fail. The test runs in CI on every vent deploy and in the demo, with the dropped flows shown in Hubble. |
+
+### FR-9 Cycle time measurement and events
+| ID | Requirement |
+|---|---|
+| FR-9.1 | The `caldera` CLI records stage timings (Section 1) and emits CloudEvents 1.0 to an EventBridge bus: `vent.environment.requested.v1`, `vent.environment.ready.v1`, `vent.environment.failed.v1`, `vent.environment.cooled.v1`, `data.golden.built.v1`, `test.e2e.completed.v1`. Timings go in the event data. |
+| FR-9.2 | Event schemas live in `caldera-platform/contracts/events/` and are validated before publishing. |
+| FR-9.3 | A dashboard shows p50/p90 of push-to-URL, new-vent, update and teardown times, headroom hit rate (vents that scheduled without waiting for a node) and image pull time per vent (from kubelet `Pulled` events). |
+
+### FR-10 Local development
+| ID | Requirement |
+|---|---|
+| FR-10.1 | `task local:up` creates a kind cluster with its default CNI disabled and Cilium installed, plus the same `vent` chart, golden DB image and PriorityClasses, so network policies and the isolation test behave the same locally and in CI. |
+| FR-10.2 | `caldera vent up --context kind-caldera` runs the full vent lifecycle locally, including feature-group resolution against local branches. |
+| FR-10.3 | Tilt provides the inner loop: code changes sync into the running pod and FastAPI reloads in seconds, without an image rebuild. |
+| FR-10.4 | CI runs the chart on kind (`ct install`) on every chart change, using the same commands. |
+
+---
+
+## 3. Feature Group Resolution
+
+Implemented in the `caldera` CLI (Python) and called by the reusable workflow.
+
+```
+caldera vent up --repo R --branch B --sha S
+  if B matches feature/<name>:
+      vent = <name>
+      other_ref = feature/<name> if it exists in the other repo (GitHub API), else main
+  else:
+      vent = <R-short>-<slug(B)>
+      other_ref = main
+  image(R)     = sha-S if built, else previous image of this vent or main (optimistic start)
+  image(other) = latest digest for other_ref
+  helm upgrade --install vent-<vent> charts/vent -n vent-<vent> ...
+
+caldera vent down --repo R --branch B
+  if the other repo still has feature/<name>: redeploy with R on main
+  else: helm uninstall + delete namespace
+```
+
+Edge cases:
+- Second repo pushes `feature/<name>` after the vent exists: the vent updates in place.
+- A newer push to the same vent cancels the running deploy (`cancel-in-progress: true`).
+- `<repo>-<slug>` names always carry a repo prefix, so they never collide with `feature/<name>` vents.
+
+---
+
+## 4. Platform Addons (installed by CDK)
+
+Kept to what speed, routing and security need.
+
+| Addon | Purpose |
+|---|---|
+| Cilium (installed first) | CNI in ENI mode, NetworkPolicy and CiliumNetworkPolicy enforcement, kube-proxy replacement, Hubble flow visibility. Its Gateway API and Ingress controllers are disabled; Envoy Gateway owns north-south traffic |
+| Envoy Gateway | Gateway API implementation for north-south routing (`gatewayClassName: envoy-gateway`); `HTTPRoute` changes apply in about a second; `SecurityPolicy` for external authorization (oauth2-proxy), the optional IP allowlist, JWT and header-based authorization; `ClientTrafficPolicy` for client IP detection |
+| Karpenter | Fast node provisioning, Spot, consolidation |
+| AWS Load Balancer Controller | One NLB for the gateway (IP targets straight to Envoy proxy pods, proxy protocol v2 so Envoy sees the real client IP) |
+| cert-manager | Let's Encrypt wildcard certificates via DNS-01 on Route 53 (issued once, reused by every vent) |
+| external-dns | Creates and maintains only the two wildcard records, from a hostname annotation set on the Envoy proxy Service through the `EnvoyProxy` resource (`spec.provider.kubernetes.envoyService.annotations`) (`--source=service`, `--domain-filter=<domain>`, TXT ownership records). It does not watch HTTPRoutes, so no vent ever waits on a DNS change |
+| Actions Runner Controller | In-cluster GitHub Actions runners |
+| KEDA | Headroom sizing from working-hours schedule and active vent count (FR-7.3). Runners scale through ARC scale sets, not KEDA |
+| metrics-server | Resource metrics |
+| External Secrets Operator | SSM Parameter Store `SecureString` -> Kubernetes Secrets for externally issued secrets; `Password` generator for secrets created in-cluster |
+
+### 4a. Preview access control (Envoy Gateway)
+
+Why Envoy Gateway on top of Cilium: Cilium stays the CNI and enforces pod-to-pod isolation; Envoy Gateway handles requests at the edge, where it has richer filtering for authentication and authorization (`SecurityPolicy`: client CIDR rules, external authorization, OIDC, JWT claims, header rules) as first-class API objects instead of custom Envoy config.
+
+Access modes (platform values, no chart or service changes):
+| Mode | `previewAccess.login.enabled` | `previewAccess.ipAllowlist.enabled` | Result |
+|---|---|---|---|
+| Default | `false` | `false` | Open: all traffic allowed. Acceptable only because vents hold synthetic data (FR-5.6) |
+| Login (target) | `true` | `false` | GitHub org login required; the allowlist is redundant and stays off |
+| Locked down | `false` | `true` | Only allowlisted CIDRs; for use if login is not ready and a demo must not be open |
+| Defense in depth | `true` | `true` | Both; optional |
+
+IP allowlist (optional, off by default):
+- When enabled, a `SecurityPolicy` targeting the shared `Gateway` sets `authorization.defaultAction: Deny` with an `Allow` rule for `principal.clientCIDRs` (office, VPN, reviewer CIDRs).
+- It depends on the real client IP reaching Envoy: proxy protocol v2 on the NLB plus a `ClientTrafficPolicy`. Keep proxy protocol on regardless, so access logs show real client IPs.
+
+Login with oauth2-proxy (in scope if time permits):
+- oauth2-proxy runs in `preview-auth` with the GitHub provider, restricted to the `prismatic-hq` org, cookie domain `.preview.<domain>` so one login covers every vent; `auth.preview.<domain>` routes to it.
+- A `SecurityPolicy` with `extAuth` (HTTP) calls oauth2-proxy for every preview request. GitHub is an OAuth provider, not an OIDC provider, so external authorization through oauth2-proxy is used instead of Envoy Gateway's native `oidc` block. The native block becomes an option if the identity provider changes to an OIDC one (for example Cognito, Okta, or Dex in front of GitHub).
+- Authorization rules can then use the identity headers oauth2-proxy returns (user, email, groups), for example limiting a vent to one GitHub team.
+
+Why this stays a platform-only change:
+- Every vent `HTTPRoute` attaches to one shared `Gateway` listener (`parentRefs` set by the `vent` chart), and the chart labels each route `prismatic.dev/exposure: preview`. Policies target the Gateway (or the labeled routes) once and cover every vent.
+- Services hold no auth logic and the `vent` chart has no auth settings, so adding or changing auth needs no service code, chart or pipeline changes.
+- In-cluster callers (the E2E Job, probes) use Service names, not the gateway, so edge auth never breaks tests or health checks.
+
+### 4b. Full teardown with `cdk destroy --all`
+
+Problem: controllers create AWS resources at runtime that CloudFormation does not know about. Left alone, they are orphaned, keep billing, and block VPC, subnet or hosted zone deletion, so `cdk destroy` fails partway.
+
+| Created at runtime by | Resources | Cleanup |
+|---|---|---|
+| AWS Load Balancer Controller | Gateway NLB, target groups, NLB security groups | Drainer deletes the Envoy proxy Service; the controller removes the NLB, target groups and security groups |
+| Karpenter | EC2 instances, launch templates | Drainer deletes NodePools and NodeClaims; Karpenter terminates the instances |
+| Cilium (ENI mode) | ENIs on nodes | Terminated with the instances (delete-on-termination); sweeper removes any left `available` |
+| external-dns | Wildcard A and TXT records | `--policy=sync`, so deleting the Service deletes the records; sweeper removes any non-SOA/NS record before the zone is deleted |
+| cert-manager | DNS-01 TXT challenge records | Removed after issuance; sweeper catches leftovers |
+| EKS and Container Insights | CloudWatch log groups (`/aws/eks/<cluster>/cluster`, `/aws/containerinsights/<cluster>/*`) | Pre-created in CDK with `RemovalPolicy.DESTROY`; sweeper deletes any others by prefix |
+| CDK kubectl provider | Lambda log groups, Lambda VPC ENIs | Log groups owned by CDK with `DESTROY`; Lambda ENIs are released by AWS (can take many minutes) |
+
+Mechanism:
+1. **Drainer** (custom resource in `AddonsStack`, depends on every addon chart and the cluster). CloudFormation deletes dependents first, so the drainer's Delete handler runs while all controllers are still alive. It deletes vent namespaces, the Gateway and the Envoy proxy Service, PVCs, then Karpenter NodePools and NodeClaims, and waits until the NLB, target groups, Karpenter instances and external-dns records are gone (timeout 20 minutes, clear error naming what is left).
+2. **Sweeper** (custom resource in `NetworkStack`, depends on the VPC, so it is deleted before the VPC and after every other stack). Its Delete handler removes anything still tagged for the cluster (`elbv2.k8s.aws/cluster`, `karpenter.sh/discovery`, `kubernetes.io/cluster/<name>`): load balancers, target groups, security groups, instances, launch templates, `available` ENIs. A matching sweeper in `DnsStack` empties the hosted zone of non-SOA/NS records, and the `NetworkStack` sweeper deletes SSM parameters under `/prismatic/`.
+3. **CDK removal policies**: `RemovalPolicy.DESTROY` on everything; ECR repos with `emptyOnDelete: true`; no Secrets Manager secrets (nothing pending deletion to collide with on redeploy); AWS-managed KMS keys (customer keys cannot be deleted immediately).
+4. **Verification**: `task verify:clean` (Python, boto3) lists any resource carrying `prismatic:*` or the cluster tags across EC2, ELB, Route 53, ECR, CloudWatch Logs and EKS, and exits non-zero if anything remains. Run it after every destroy.
+
+What stays by design: the `CDKToolkit` bootstrap stack and its bucket (not part of this app). Re-creating the hosted zone assigns new name servers, so the domain's delegation must be updated after every fresh deploy.
+
+Expected duration: about 20-40 minutes, mostly EKS deletion and Lambda ENI release (estimate).
+
+### 4c. Well-Architected review and cdk-nag
+
+What cdk-nag can and cannot prove:
+- cdk-nag checks the synthesized CloudFormation templates against rule packs. `AwsSolutionsChecks` is the closest pack to Well-Architected best practices; it is blocking. `NIST80053R5Checks` runs in report-only mode for extra signal.
+- cdk-nag does not see anything created at runtime or inside the cluster: the gateway NLB, Karpenter instances, Helm-rendered Kubernetes objects. Those are covered by the complementary checks below.
+- A Well-Architected review is a question-by-question assessment across six pillars in the AWS Well-Architected Tool. cdk-nag is evidence for it, not a substitute. "Pass" is defined here as: zero unsuppressed cdk-nag errors, zero high-risk issues (HRIs) left unacknowledged in the Well-Architected Tool, and every accepted risk documented with its reason.
+
+Expected `AwsSolutionsChecks` findings for this design and how each is resolved:
+| Rule | Finding | Resolution |
+|---|---|---|
+| VPC7 | VPC without flow logs | Fix: flow logs to a CloudWatch log group owned by the stack |
+| EKS1 | Public API endpoint | Fix: private endpoint only; CDK kubectl handler placed in the VPC; ARC runners are in-cluster; laptops reach the API through SSM Session Manager port forwarding to a small access instance (or accept EKS1 as a documented risk if that friction is unwanted) |
+| EKS2 | Control plane logs not all enabled | Fix: api, audit, authenticator, controllerManager, scheduler, into the pre-created log group |
+| IAM4 | AWS managed policies on the EKS cluster and node roles, Lambda execution roles | EKS cluster and node roles: keep the AWS managed policies AWS requires or recommends for EKS; this is the only suppression (policy below). Lambda execution roles (drainer, sweeper, kubectl handler where configurable): fix with inline least-privilege CloudWatch Logs policies instead of `AWSLambdaBasicExecutionRole` |
+| IAM5 | Wildcards in Karpenter, Load Balancer Controller, Cilium operator, external-dns, cert-manager, drainer/sweeper and CI policies | Fix: resource ARNs, `aws:ResourceTag` and `aws:RequestTag` conditions, the hosted zone ARN for DNS actions. Actions that AWS documents as not supporting resource-level permissions (for example `ec2:Describe*`, `ecr:GetAuthorizationToken`, `route53:ListHostedZones`) must use `Resource: *`; these exact actions are suppressed per the policy below |
+| L1 | Lambda not on the latest runtime | Fix: drainer and sweeper on the latest Python runtime; keep CDK current so its provider Lambdas are too |
+| SQS3, SQS4 | Karpenter interruption queue without DLQ or SSL enforcement | Fix: DLQ and `enforceSSL: true` |
+| SMG4 | Secrets Manager secrets without rotation | Fix by design: the platform creates no Secrets Manager secrets. Generated secrets (per-vent Postgres passwords, oauth2-proxy cookie secret) are created in-cluster by the External Secrets `Password` generator and never leave the cluster. Externally issued secrets (GitHub App private key, GitHub OAuth client secret) are SSM Parameter Store `SecureString` values under `/prismatic/`, written by `task secrets:put` and read by External Secrets |
+| S1, S2, S10 | Any S3 bucket without access logs, public access block or SSL-only | Fix: block public access and `enforceSSL` on every bucket; avoid buckets where a log group works |
+| EC26 and related | Unencrypted EBS on nodes | Fix: encrypted gp3 root volumes in the managed node group launch template and the Karpenter `EC2NodeClass`; IMDSv2 required on both |
+
+Suppression policy:
+- Default is fix at source. Exactly two suppression categories are allowed, both because AWS itself requires them:
+  - IAM4 on the EKS cluster role and the node roles (managed node group and Karpenter), where AWS requires or recommends its managed policies (`AmazonEKSClusterPolicy`, `AmazonEKSWorkerNodePolicy`, `AmazonEC2ContainerRegistryReadOnly`, `AmazonSSMManagedInstanceCore`).
+  - IAM5 `Resource::*` only for actions listed in the AWS Service Authorization Reference as not supporting resource-level permissions (for example `ecr:GetAuthorizationToken`, `ec2:Describe*`, `elasticloadbalancing:Describe*`, `route53:ListHostedZones`, `route53:ListHostedZonesByName`). Each suppression names the exact role and action; any action that does support resource ARNs or conditions must be scoped, never suppressed.
+- A unit test synthesizes the app and asserts that every suppression is IAM4 on the named EKS roles or IAM5 on an action from the allowed list, so a new suppression outside the policy fails CI.
+- Every suppression lives in one file, `caldera/nag_suppressions.py`, uses `NagSuppressions.add_resource_suppressions` on the exact resource with `applies_to` for the exact permission, and carries a reason that links the AWS or CDK documentation.
+- CI prints the suppression count; any new suppression requires review in the PR.
+
+Checks beyond cdk-nag (runtime and in-cluster):
+| Area | Check |
+|---|---|
+| Helm-rendered Kubernetes objects (`vent` chart, addon values) | `trivy config` on rendered manifests in CI; failures block the chart change |
+| EKS node and control plane configuration | `kube-bench` (CIS EKS benchmark) Job after cluster creation, report stored as an artifact |
+| Runtime AWS resources (NLB, Karpenter instances) | Controller settings enforce the same rules: NLB access logs and TLS policy via Load Balancer Controller annotations, IMDSv2 and encrypted volumes via `EC2NodeClass`; AWS Security Hub (AWS Foundational Security Best Practices) optional during the demo window |
+
+Pillar coverage and known gaps (recorded in the Well-Architected Tool as accepted PoC risks):
+| Pillar | Covered by | Known gap in this PoC |
+|---|---|---|
+| Operational excellence | Everything as code, one CLI for CI and local, cycle-time metrics, runbook in README | No on-call or alert routing |
+| Security | OIDC and Pod Identity only, private EKS endpoint, Cilium default-deny, encryption at rest, cdk-nag blocking | Preview URLs open by default until oauth2-proxy ships (risk 11) |
+| Reliability | 2 AZs, Karpenter capacity, stateless vents that rebuild in seconds | Single NAT gateway (`natGateways: 2` context flag for review mode); vent databases reset on restart by design |
+| Performance efficiency | Cycle-time budget measured per run, headroom, small images | None significant for the scope |
+| Cost optimization | Spot for vents, scale to zero at night, cost allocation tags, full teardown, AWS Budgets alarm created by CDK | Idle headroom during working hours |
+| Sustainability | Spot, consolidation, scale to zero; Graviton (arm64) nodes with multi-arch images | None significant for the scope |
+
+Not installed (roadmap, Section 9): Argo CD, Kargo, Argo Rollouts, Istio, Crossplane, CNPG, Kyverno, full observability stack.
+
+---
+
+## 5. Non-Functional Requirements
 
 | ID | Category | Requirement | Target |
 |---|---|---|---|
-| NFR-1.1 | Speed | Branch push to a healthy vent | p90 under 10 minutes |
-| NFR-1.2 | Speed | Branch delete to fully cooled vent | under 10 minutes |
-| NFR-1.3 | Speed | CI build and push per service | under 5 minutes, with layer caching |
-| NFR-1.4 | Speed | Vent database ready from snapshot | under 3 minutes |
-| NFR-2.1 | Isolation | Vents share no data, secrets or network paths | Namespace per vent, ambient mTLS, default-deny AuthorizationPolicy + NetworkPolicy, per-vent DB credentials |
-| NFR-2.2 | Isolation | A vent cannot starve the baseline or other vents | ResourceQuota + LimitRange per vent namespace; vents on a separate Karpenter NodePool |
-| NFR-3.1 | Determinism | Golden snapshot rebuilt from the same inputs is byte-identical in content | Checksum match enforced every night (FR-5.5) |
-| NFR-3.2 | Determinism | E2E runs start from the same data | DB reset to pinned snapshot before every run |
-| NFR-3.3 | Determinism | Flaky test rate | under 1% of runs; flaky tests quarantined, never retried silently |
-| NFR-4.1 | Scale | Concurrent vents supported | at least 20, capped by config |
-| NFR-4.2 | Cost | Idle cost per vent | tracked per namespace (OpenCost); TTL cooling (FR-3.7); Spot nodes for vents |
-| NFR-5.1 | Security | No static cloud credentials in cluster or CI | EKS Pod Identity + GitHub OIDC only |
-| NFR-5.2 | Security | Secrets come only from AWS Secrets Manager via External Secrets | None in Git, plaintext or SOPS |
-| NFR-5.3 | Security | Preview URLs are not public | oauth2-proxy (GitHub org SSO) through Istio `CUSTOM` authorization |
-| NFR-5.4 | Security | Only signed images from the org's ECR run | Kyverno `verifyImages` + registry allowlist |
-| NFR-5.5 | Security | Vent AppProject cannot create cluster-scoped or RBAC resources | Argo CD AppProject allow/deny lists |
-| NFR-5.6 | Security | All in-mesh traffic encrypted | Ambient mTLS STRICT, verified by a policy test |
-| NFR-5.7 | Security | Crossplane IAM role cannot touch CDK-owned resources | IAM permission boundary + tag-based conditions (`managed-by=crossplane`) |
-| NFR-6.1 | Reliability | Platform state is fully reproducible from Git + CDK | `cdk deploy` + Argo CD sync recreates the cluster |
-| NFR-6.2 | Reliability | Cooling never leaks resources | Finalizers on every Application and Crossplane claim; nightly orphan sweep reports leaks |
-| NFR-6.3 | Reliability | Let's Encrypt rate limits never block vent creation | Single wildcard cert for all vents; staging issuer for tests |
-| NFR-7.1 | Observability | Every vent has metrics, logs and traces labeled by vent | `prismatic.dev/vent=<name>` on all resources |
-| NFR-7.2 | Observability | Mesh and rollout health visible per vent | Grafana dashboards for Istio, Rollouts, CNPG; Kiali for mesh topology |
-| NFR-7.3 | Observability | Vent lifecycle events are auditable | Every lifecycle step emits a registered CloudEvent; events retained 30 days in JetStream and archived to S3 |
-| NFR-7.4 | Interoperability | Any consumer can read any platform event without custom parsing | 100% of events validate against the CloudEvents 1.0 envelope profile; CI contract check blocks breaking changes |
-| NFR-8.1 | Maintainability | Adding a third service needs no platform code change | Services register via a config entry only |
-| NFR-8.2 | Maintainability | Addons pinned and auto-updated | Renovate PRs for charts, images, CDK libs |
-| NFR-9.1 | Developer experience | Developers need no AWS or kubectl access to use vents | Push a branch, read URLs from the PR |
-
-Note on "100% confidence": E2E at PR time sharply reduces regression risk but cannot prove absence of regressions. State the goal as measurable gates instead: required check passes, coverage floor, contract tests green, Rollout analysis green, zero quarantined tests on critical paths.
+| NFR-1.1 | Speed | New vent with images already built | p90 under 60s |
+| NFR-1.2 | Speed | Push to URL with branch code | p90 under 3 minutes |
+| NFR-1.3 | Speed | Push to an existing vent | p90 under 2 minutes |
+| NFR-1.4 | Speed | Teardown | under 60s |
+| NFR-1.5 | Speed | Headroom hit rate during working hours | 90%+ of vents schedule without waiting for a node |
+| NFR-2.1 | Isolation | Vents share no database, credentials or pod network access | Namespace per vent, Cilium-enforced default-deny, per-vent Postgres password, verified by the FR-8.4 isolation test on every deploy |
+| NFR-3.1 | Determinism | Same `dataset-version` = same data | Checksum verified at image build |
+| NFR-4.1 | Scale | Concurrent vents | 30+, bounded by a config cap and Karpenter limits |
+| NFR-4.2 | Cost | Fixed platform cost stated with measured numbers in the README | EKS control plane, system nodes, NLB, NAT |
+| NFR-4.3 | Cost | Idle cost | Headroom and runners scale to zero at night; vents on Spot |
+| NFR-5.1 | Security | No static cloud credentials | GitHub OIDC for bootstrap, Pod Identity in cluster |
+| NFR-5.2 | Security | Fork code never runs on in-cluster runners | Separate runner labels; fork PRs pinned to GitHub-hosted runners |
+| NFR-5.3 | Security | Preview URLs require login once oauth2-proxy ships; open by default until then | Envoy Gateway `SecurityPolicy` + oauth2-proxy GitHub org login via `extAuth`; optional IP allowlist; vents hold synthetic data only, so an open vent exposes no customer data (Section 4a) |
+| NFR-5.4 | Security | Vent namespaces have no cloud permissions | No Pod Identity associations in `vent-*` namespaces |
+| NFR-5.5 | Security | Synthetic data only | FR-5.6, FR-6.1 |
+| NFR-6.1 | Reliability | Teardown never leaks | All vent resources in one namespace; sweeper reports stray namespaces |
+| NFR-6.3 | Cost | Platform teardown leaves nothing billing | `cdk destroy --all --force` succeeds in one run and `task verify:clean` reports zero leftover resources (Section 4b) |
+| NFR-6.2 | Reliability | Spot interruption | Vent pods reschedule and the database resets to golden; acceptable for previews |
+| NFR-7.1 | Developer experience | Developers need no AWS or kubectl access to use vents | Push a branch, read URLs, timings and E2E result on the PR |
+| NFR-7.2 | Developer experience | Same commands everywhere | `caldera` CLI identical in CI, on a laptop against EKS, and on kind |
+| NFR-8.1 | Compliance | Templates meet AWS Solutions best practices | `cdk synth` with `AwsSolutionsChecks` has zero unsuppressed errors; suppressions limited to IAM4 on EKS cluster/node roles and IAM5 on actions without resource-level permissions, enforced by a test |
+| NFR-8.2 | Compliance | Well-Architected review | No unacknowledged high-risk issues in the Well-Architected Tool; accepted PoC risks listed in Section 4c |
 
 ---
 
-## 3. Feature Group Resolution -- Design Options
+## 6. Key Decisions And Trade-offs
 
-ApplicationSet generators do not natively union branches across two repos and fall back to `main`.
-
-| Option | How | Pros | Cons |
-|---|---|---|---|
-| **A. Git files generator over `applications-infra` (chosen)** | Each service's CI writes/deletes `environments/vents/<vent>/services/<service>.yaml` in `applications-infra`. ApplicationSet Git files generators render one Application per service file and one per `env.yaml`. Missing service = pinned `main` digest with `track: main`. | Pure GitOps; auditable history; simple; handles union and fallback trivially | CI needs a GitHub App token to write to another repo; concurrent writes need a concurrency group + rebase retry |
-| B. ApplicationSet plugin generator | Small HTTP service queries GitHub for branches in both repos, groups by `feature/<name>`, returns params | No registry commits; always live | Custom service to build, secure and operate; state lives outside Git |
-| C. Matrix/merge of SCM Provider or PR generators | Merge generator keyed on branch name | No custom code | Merge only enriches the base generator's items; no union across repos, no clean `main` fallback |
-| D. Header-based routing on the shared baseline | Only changed services deploy; Istio routes by `x-vent` header, others fall through to baseline | Cheapest, fastest; Istio already present | Breaks DB isolation unless DB is also routed; needs header propagation in every service |
-
-Recommendation: A. Mention D as the scale-out path now that Istio is in place.
-
-Trigger note: the assignment says "branch pushed", not "PR opened". Create vents on branch push. PRs add URL comments and required checks.
-
----
-
-## 3b. `applications-infra` Layout And Writers
-
-```
-applications-infra/
-  schema/                          # JSON schemas for env.yaml and service files
-  environments/
-    dev/
-      env.yaml                     # cluster, namespace, domain, db mode, kargo stage
-      services/
-        tremor-api.yaml            # chart version, image digest, values overrides
-        steward-api.yaml
-    staging/ ...
-    prod/ ...
-    tenants/
-      <tenant>/                    # single-tenant: own namespace or own cluster via env.yaml
-        env.yaml
-        services/ ...
-    vents/
-      <vent>/
-        env.yaml                   # branches, created-by, ttl, dataset-version, eruption name
-        services/
-          tremor-api.yaml          # branch digest, or main digest + track: main
-          steward-api.yaml
-```
-
-Example service file:
-```yaml
-service: tremor-api
-chart:
-  repo: oci://<account>.dkr.ecr.<region>.amazonaws.com/charts/prismatic-service
-  version: 1.4.0
-image:
-  repository: <account>.dkr.ecr.<region>.amazonaws.com/tremor-api
-  digest: sha256:...               # sha-abc1234, branch feature/checkout-v2
-track: branch                      # branch | main
-values: {}                         # environment-specific overrides only
-```
-
-ApplicationSets (live in `caldera-platform/gitops/`, read `applications-infra`):
-| ApplicationSet | Generator | Produces |
+| Decision | Chosen | Trade-off accepted |
 |---|---|---|
-| `environments` | Git files `environments/**/env.yaml` | `env-<env>`: Namespace (ambient label, quota), CNPG Cluster, waypoint, AuthorizationPolicy |
-| `services` | Git files `environments/**/services/*.yaml` | `<service>-<env>`: exactly one Application per service per environment, multi-source (chart from OCI + values from the file) |
-
-Both use finalizers so deleting files cools resources. Vent Applications use the `previews` AppProject; others use `baseline`, `staging`, `prod`, `tenants`.
-
-Writers:
-| Writer | Identity | Paths it may change | When |
-|---|---|---|---|
-| Service CI (GitHub Actions) | GitHub App `prismatic-deployer` | `environments/vents/<vent>/**` for its own service; creates `env.yaml` and pins other services at `main` on first write | Branch push, branch delete |
-| Service CI on `main` merge | same App | `track: main` pins in every vent | After `main` image publish |
-| Kargo | same App (or its own App) | `environments/{dev,staging,prod,tenants/*}/services/*.yaml` | Promotion |
-| Vent sweeper (Argo Workflow) | same App | Delete `environments/vents/<vent>/` past TTL or with no live branch | Nightly |
-| Humans | PR + review | Anything, including `values` and `env.yaml` | Config changes |
-
-Guardrails for direct-to-main:
-- Ruleset on `main`: PR + review required; bypass list = the GitHub App only.
-- One shared writer (a composite GitHub Action + a small Python CLI in `caldera-platform`) does schema validation, path allowlist checks, commit trailers and rebase-retry. Kargo uses its built-in `git-commit`/`git-push` steps with the same schema check.
-- Post-push CI on `applications-infra` renders every changed Application (`helm template` + kubeconform) and alerts on failure.
-- Vent cooling rule: on branch delete, CI removes that service's file; if no service in the vent still tracks a branch, it removes the whole vent directory.
+| Compute | EKS + Karpenter | Higher fixed cost and ops than ECS; vents start in seconds, not minutes |
+| CNI | Cilium in ENI mode instead of the AWS VPC CNI | You own CNI upgrades and EKS version compatibility, and AWS support does not cover Cilium; in return policies are enforced by default, kube-proxy is replaced by eBPF, Hubble shows every flow, and kind runs the same CNI locally |
+| Environment unit | Namespace + Helm release | Softer isolation than a stack per vent; creation and teardown under a minute |
+| Database | Golden data baked into a Postgres image on `emptyDir` | Not the managed engine; data resets on restart; dataset size capped; zero restore or seed time |
+| Capacity | Headroom placeholders at negative priority | Pays for idle spare capacity during working hours; removes node wait from the critical path |
+| Images | Pre-pull DaemonSet + shared base image + small app layers | Pre-pull uses node disk for images a vent may never need; pulls in seconds |
+| Routing | Cilium for CNI + Envoy Gateway for north-south, wildcard DNS (external-dns, wildcard records only) and wildcard certificate | Two networking components instead of one; richer request-level auth and authorization at the edge; no per-vent DNS or certificate delay |
+| Preview auth | Open by default; oauth2-proxy login is the access control; IP allowlist optional and off | Until login ships, preview URLs are reachable by anyone who knows them (synthetic data only, unguessable only by obscurity); one shared gateway listener keeps auth changes platform-only |
+| cdk-nag findings | Fix at source; suppress only IAM4 on the EKS cluster and node roles and IAM5 `Resource: *` for actions AWS documents as not supporting resource-level permissions | Secrets move to in-cluster generation and SSM Parameter Store to clear SMG4 without rotation Lambdas; a test pins the suppression list to these two categories |
+| Runners | In-cluster ARC runners | Cluster runs CI code, so fork code is excluded; no runner cold start, warm caches, no credentials leave the cluster |
+| Deploy model | Push-based Helm from CI | No drift reconciliation; fastest path, and the chart carries over to GitOps later |
+| Feature groups | Branch name convention | Relies on naming discipline; transparent, no extra service |
 
 ---
 
-## 3c. Event Contract (CloudEvents 1.0)
+## 7. Alternatives Considered
 
-Location: `caldera-platform/contracts/events/` (same layout as `ryanmcafee/homelab/contracts/events`):
-```
-contracts/events/
-  envelope.v1.schema.json      # CloudEvents 1.0 narrowing profile
-  registry.v1.yaml             # every registered type: owner, schema, delivery, status
-  data/<domain>.<entity>.<action>.v1.schema.json
-  examples/<type>.json         # one valid example per type, checked in CI
-```
+### 7.1 ECS Fargate + Aurora copy-on-write clone per vent
 
-Envelope profile (narrows CloudEvents 1.0):
-| Attribute | Rule |
-|---|---|
-| `specversion` | `const "1.0"` |
-| `id` | Required, unique per `source`; UUIDv4 by default. Idempotency key with `source`. |
-| `source` | `//<org-domain>/<component>`, for example `//prismatic-hq/tremor-api/ci`, `//prismatic-hq/caldera/golden-seeder` |
-| `type` | `<reverse-domain>.<domain>.<entity>.<action>.v<N>`, for example `com.prismatichq.vent.environment.ready.v1` (reverse-domain set once the domain is chosen) |
-| `subject` | Required. The entity: `vent/<name>`, `service/<name>`, `snapshot/<dataset-version>`, `application/<namespace>/<name>` |
-| `time` | Required, RFC 3339 |
-| `datacontenttype` | `const "application/json"` |
-| `dataschema` | Required. URL of the data schema at a pinned `caldera-platform` ref |
-| `environment` (extension) | Required. `dev`, `staging`, `prod`, `tenant-<name>`, `vent-<name>` |
-| `traceparent` (extension) | Required. W3C trace context (CloudEvents Distributed Tracing extension) |
-| `correlationid` (extension) | Required. Ties every event of one vent lifecycle or one promotion together |
-| `additionalProperties` | `false`. Adding an attribute is a coordinated rollout: validators first, producers second. |
+A CDK stack per vent: two Fargate services behind a shared ALB and an Aurora clone of a golden cluster.
+Strengths: CDK-native, managed database engine, low operational load, low fixed cost.
+Rejected because provisioning speed is a deal breaker: new vent about 8-15 minutes (clone + Serverless v2 instance + CloudFormation + ECS settling), image update about 3-5 minutes, teardown about 10-15 minutes, a 15-clone limit per source cluster, and no way to run the vent lifecycle locally.
 
-Event catalog (v1):
-| Type suffix | Producer | Consumers | Subject |
-|---|---|---|---|
-| `build.image.published.v1` | Service CI | Kargo warehouse notes, audit | `service/<name>` |
-| `vent.environment.requested.v1` | Service CI (after `applications-infra` write) | Vent tracker, PR commenter | `vent/<name>` |
-| `vent.environment.ready.v1` | Vent tracker sensor (env + all service Applications Healthy) | E2E sensor, PR commenter | `vent/<name>` |
-| `vent.environment.failed.v1` | Vent tracker sensor | PR commenter, alerting | `vent/<name>` |
-| `vent.environment.cooling.v1` | Service CI or vent sweeper | Audit | `vent/<name>` |
-| `vent.environment.cooled.v1` | Vent tracker sensor (all Applications deleted) | Orphan sweep, audit | `vent/<name>` |
-| `gitops.application.synced.v1` | Argo CD Notifications (templated CloudEvent body) | Vent tracker | `application/<ns>/<name>` |
-| `gitops.application.degraded.v1` | Argo CD Notifications | Vent tracker, alerting | `application/<ns>/<name>` |
-| `data.snapshot.built.v1` | Golden snapshot Workflow | Snapshot pruner, audit | `snapshot/<dataset-version>` |
-| `data.snapshot.verification-failed.v1` | Golden snapshot Workflow | Alerting | `snapshot/<dataset-version>` |
-| `data.database.reset.v1` | E2E Workflow | Audit | `vent/<name>` |
-| `test.e2e.completed.v1` | E2E Workflow exit handler | GitHub check reporter, audit | `vent/<name>` |
-| `delivery.rollout.promoted.v1` | Argo Rollouts notifications | Kargo verification, audit | `rollout/<ns>/<name>` |
-| `delivery.rollout.aborted.v1` | Argo Rollouts notifications | Alerting, PR commenter | `rollout/<ns>/<name>` |
-| `delivery.analysis.failed.v1` | Argo Rollouts notifications | Alerting | `analysisrun/<ns>/<name>` |
-| `delivery.freight.promoted.v1` | Kargo (promotion step webhook) | Audit, release notes | `stage/<name>` |
+### 7.2 CI-driven CDK stack per pull request with a new VPC per stack
 
-Transport:
-- Producers outside the cluster (GitHub Actions) POST structured CloudEvents (`Content-Type: application/cloudevents+json`) to an Argo Events webhook EventSource behind the Istio Gateway, authenticated with a GitHub OIDC token validated by an Istio `RequestAuthentication`.
-- Argo CD and Argo Rollouts notifications use webhook templates whose body is a structured CloudEvent.
-- In-cluster Python producers (Workflows, `golden-seeder`) publish with the `cloudevents` SDK to the webhook EventSource, or to NATS JetStream using the CloudEvents NATS protocol binding.
-- Argo Events EventBus runs on NATS JetStream with its own account and subject root, separate from any other bus.
+A PR triggers `cdk deploy` of a stack with its own VPC, NAT gateways, ECS cluster, Fargate service and public ALB; closing the PR runs `cdk destroy`.
+Rejected: one repo only, no database, slow and costly per PR, default VPC and Elastic IP quotas cap it at about 2 concurrent previews, public HTTP only.
+Adopted: GitHub Deployments for PR URLs, one owner object per environment for one-command teardown, OIDC.
 
-Caveat to handle explicitly: Argo Events wraps every received event in its own CloudEvent (the platform event lands in `data.body`). Sensors therefore filter on `body.type` and validate `body` against the envelope profile. Document this so nobody treats the Argo Events outer envelope as the platform contract.
+### 7.3 Other options
+
+| | Chosen: EKS + Helm, speed-tuned | ECS + Aurora clone | ECS + shared RDS template DB | Lambda + Aurora Serverless v2 | EC2 + docker compose | Full GitOps platform |
+|---|---|---|---|---|---|---|
+| New vent | ~1 min | ~8-15 min | ~3-5 min | ~5-10 min | ~2-4 min | ~5-10 min |
+| Update | ~1-2 min incl. build | ~3-5 min | ~3-5 min | ~2-4 min | ~2 min | ~2-5 min |
+| Runs locally end to end | Yes (kind) | No | No | Partly | Yes | Yes (kind) |
+| Fixed cost | Medium | Low-medium | Low-medium | Low | Lowest | High |
+| Moving parts | Some | Few | Few | Few-medium | Fewest | Very many |
+
+Times are estimates until measured.
+
+### 7.4 Header-based routing on the shared baseline
+
+Rejected: baseline services would still use the baseline database, breaking the per-environment database requirement.
+
+### 7.5 Warm pool of fully provisioned vents
+
+Pre-created namespaces with services and databases, claimed on push. Not needed: with headroom and a baked golden image a vent starts in under a minute from nothing, and claiming adds renaming and state-tracking logic. Revisit if measured p90 misses NFR-1.1.
 
 ---
 
-## 4. GitOps Bridge With CDK
+## 8. Demo Plan (video)
 
-CDK owns foundational AWS resources and publishes metadata; Argo CD owns everything in-cluster.
-
-1. CDK stacks: `Network` -> `Cluster` (EKS + Pod Identity agent + Karpenter IAM/SQS interruption queue) -> `Data` (S3 buckets for Workflow artifacts, CNPG backups, Loki, Tempo) -> `Dns` (Route 53 zone) -> `Registry` (ECR repos + lifecycle rules) -> `CiAccess` (GitHub OIDC provider + roles) -> `AddonIdentity` (one Pod Identity role per addon, Section 6) -> `GitOpsBridge`.
-2. `GitOpsBridge` installs the Argo CD Helm chart and writes an Argo CD **cluster Secret** with:
-   - labels as addon feature flags: `enable_istio: "true"`, `enable_crossplane: "true"`, `enable_karpenter: "true"`, ...
-   - annotations as metadata: `aws_account_id`, `aws_region`, `cluster_name`, `vpc_id`, `hosted_zone_id`, `domain`, `acme_email`, `ecr_registry`, `artifact_bucket`, `crossplane_role_arn`, ...
-3. Addon ApplicationSets use the **cluster generator** with label selectors and template values from annotations. This matches the upstream gitops-bridge-dev contract, so their addon charts can be reused.
-4. A root `bootstrap` Application points at `caldera-platform/gitops/` (same split as homelab: `bootstrap` -> `addons` -> `applications` -> `previews`).
-
-CDK caveats:
-- CDK's EKS module applies Helm and manifests through a kubectl Lambda. Keep that surface small: Argo CD and the cluster Secret only.
-- EKS Blueprints for CDK is TypeScript-first and its Python bindings lag, so plain `aws_eks` + a thin GitOps Bridge construct is safer.
-- Use EKS Pod Identity (not IRSA) for every addon role.
+1. Show `dev` running `main` of both services and the cycle-time dashboard.
+2. Push `feature/quake-alerts` in tremor-api only -> vent with steward on `main` (scenario A); show the URL live before the build finishes.
+3. Push `fix-crew-sync` in steward-api only -> vent `steward-fix-crew-sync` (scenario B).
+4. Push `feature/quake-alerts` in steward-api -> the existing vent updates to both branches (scenario C1).
+5. Push `feature/tsunami` in tremor-api and `feature/lava-flow` in steward-api -> two vents (scenario C2).
+6. Show isolation (data written in one vent is absent elsewhere) and `caldera vent reset`.
+7. Show headroom preemption: placeholders evicted, vent pods running, Karpenter adding a node in the background.
+8. Delete branches -> vents cool in under a minute.
+9. Run the same `caldera vent up` on kind locally.
+10. Walk the code: CDK stacks, `vent` chart, `caldera` CLI, `vent.yml`, golden image build.
 
 ---
 
-## 5. Golden Snapshot Pipeline
+## 9. Roadmap: GitOps Platform
 
-```
-CronWorkflow golden-snapshot (nightly 02:00 UTC, also on demand)
-  1. resolve-inputs   seeder image digest + Alembic heads of tremor/steward main -> dataset-version
-  2. scratch-db       CNPG Cluster golden-build-<run> (empty, gp3, snapshot-capable StorageClass)
-  3. migrate          tremor-api:main `alembic upgrade head`; steward-api:main `alembic upgrade head`
-  4. seed             golden-seeder writes fixed fixtures for both schemas
-  5. verify           per-table checksum; compare with last snapshot of same dataset-version
-  6. snapshot         CNPG Backup method=volumeSnapshot -> VolumeSnapshot labeled dataset-version, checksum
-  7. prune            keep last 7 verified; never delete snapshots pinned by live vents
-  exit handler        delete scratch cluster; alert on failure
-```
+Adopt when the service count, team count or release process outgrows push-based Helm: roughly 5+ services, several teams, progressive delivery with automated rollback, or auditors asking for one versioned record of what runs where.
 
-`golden-seeder` design rules:
-- Lives in `caldera-platform/seeder/` as a Python package with its own Dockerfile and tests.
-- Fixtures are code or versioned data files, never generated at random. No Faker without a fixed seed; prefer explicit records.
-- IDs: UUIDv5 over a fixed namespace + natural key. Timestamps: fixed epoch constants.
-- Inserts in a stable order in one transaction per schema. Sequences reset to known values after load.
-- Idempotent: running twice on an empty DB yields the same checksum; running on a non-empty DB fails fast.
-- Coupling trade-off: the seeder knows both schemas. Alternative is each service shipping its own `seed` entrypoint and the Workflow calling both. Start central; move ownership to services if schemas drift often.
+- Argo CD bootstrapped by CDK (GitOps Bridge); a desired-state repo written by automation; Git files ApplicationSets with one Application per service per environment.
+- `helm-charts` repo publishing the `vent` chart split into `prismatic-service` and `prismatic-environment`, OCI in ECR.
+- Kargo promotion `dev -> staging -> prod`; Argo Rollouts with Prometheus analysis.
+- Istio ambient, Crossplane, Kyverno, kube-prometheus-stack; Argo Events + Workflows with CloudEvents on NATS JetStream.
 
-Vent bootstrap: CNPG `Cluster.spec.bootstrap.recovery.volumeSnapshots` from the pinned snapshot, then the branch's newer migrations run as a PreSync Job. Reset = recreate the CNPG Cluster from the same snapshot (about 1 minute).
-
-Migration risk: a branch migration that is not backward compatible breaks the other service running `main` in the same vent. Enforce expand/contract migrations and run the other service's contract tests in the vent.
-
-Other database options considered (for the write-up): Barman object-store recovery (slower), Aurora fast clone per vent via Crossplane (realistic but 15-clone limit and slower), RDS snapshot restore (too slow), `CREATE DATABASE ... TEMPLATE` on a shared instance (fast but weak isolation).
+Migration path: the chart, golden DB image, E2E suite, CloudEvents contracts and resolver carry over; the resolver writes pins to the desired-state repo instead of running `helm upgrade`. Headroom, pre-pull, ARC and the golden image stay as they are.
 
 ---
 
-## 6. Platform Addons -- Install List
+## 10. Scope For The 24-Hour Submission
 
-All installed by Argo CD from `caldera-platform/gitops/addons`, gated by cluster Secret labels. Sync waves order dependencies.
+Must ship: FR-1 to FR-5, FR-6.1 to FR-6.3, FR-7.1 and FR-7.2, FR-8.1 and FR-8.2, FR-4.9 teardown, NFR-5.1 to NFR-5.4, the demo, measured timings in the README.
 
-| Wave | Addon | Purpose | Pod Identity role (CDK) |
-|---|---|---|---|
-| -3 | Gateway API CRDs, prometheus-operator CRDs, snapshot CRDs | CRDs other addons depend on | -- |
-| -2 | EBS CSI driver + snapshot-controller + `VolumeSnapshotClass` | PVCs and golden snapshots | EBS CSI |
-| -2 | Karpenter + NodePools (`baseline` On-Demand, `vents` Spot) | Node autoscaling, vent isolation | Karpenter |
-| -2 | metrics-server | HPA and `kubectl top` | -- |
-| -1 | Istio base, istiod, istio-cni, ztunnel (ambient profile) | Mesh, mTLS | -- |
-| -1 | AWS Load Balancer Controller | NLB for the Istio ingress Gateway | AWS LBC |
-| -1 | cert-manager | Let's Encrypt certs (DNS-01, Route 53) | cert-manager |
-| -1 | External Secrets Operator | Secrets Manager -> Kubernetes Secrets | ESO |
-| -1 | external-dns | Route 53 records from HTTPRoutes | external-dns |
-| -1 | Kyverno | Policy enforcement | -- |
-| -1 | Stakater Reloader | Restart on secret/config change | -- |
-| 0 | kube-prometheus-stack (Prometheus, Alertmanager, Grafana) | Metrics, Rollouts analysis source | -- |
-| 0 | Loki + Fluent Bit | Logs | Loki (S3) |
-| 0 | Tempo + OpenTelemetry Collector | Traces | Tempo (S3) |
-| 0 | Kiali | Mesh topology for ambient | -- |
-| 0 | OpenCost | Per-vent cost | -- |
-| 1 | Crossplane + provider-family-aws (+ needed sub-providers) | App/vent-scoped AWS resources | Crossplane |
-| 1 | CloudNativePG operator (+ barman-cloud plugin) | Postgres per environment | CNPG backups (S3) |
-| 1 | Argo Workflows | Golden snapshot, E2E, orphan sweep | Argo Workflows (S3 artifacts) |
-| 1 | Argo Events + EventBus (NATS JetStream) | Event-driven triggers | -- |
-| 1 | Argo Rollouts + Gateway API traffic plugin | Progressive delivery, analysis | -- |
-| 1 | Kargo | Stage promotion | Kargo (ECR read) |
-| 1 | oauth2-proxy | SSO for preview URLs | -- |
-| 1 | Trivy Operator | In-cluster CVE scanning | -- |
-| 2 | ClusterIssuers (`letsencrypt-staging`, `letsencrypt-prod`), wildcard `Certificate` | TLS | -- |
-| 2 | `ClusterSecretStore` (Secrets Manager) | ESO backend | -- |
-| 2 | Istio `Gateway`, mesh `PeerAuthentication` STRICT, oauth2-proxy `extensionProviders` | Ingress + mesh policy | -- |
-| 2 | Kyverno policies (ambient label, no sidecars, signed images, ECR only, limits, vent labels) | Guardrails | -- |
-| 2 | Crossplane `ProviderConfig` + Compositions/XRDs | AWS resource APIs | -- |
-| 2 | AnalysisTemplates (ClusterAnalysisTemplate), WorkflowTemplates, CronWorkflow `golden-snapshot`, Sensors | Shared delivery/test logic | -- |
-| 2 | Argo CD Notifications (GitHub) | Commit status, PR comments | -- |
-| 3 | Baseline applications (tremor-api, steward-api, CNPG cluster) | `dev` environment | -- |
-| 3 | `previews` ApplicationSet + AppProject | Vents | -- |
+Ship if time allows: oauth2-proxy login for preview URLs (Section 4a), ARC runners (fall back to GitHub-hosted runners with OIDC), pre-pull DaemonSet, KEDA schedules, CloudEvents, dashboard, Tilt, sweeper.
 
-Renovate runs as a GitHub App (or a CronJob, as in homelab) against all three repos.
-
-Istio ambient notes:
-- EKS VPC CNI is compatible with ambient via istio-cni chaining.
-- ztunnel gives L4 telemetry only. Request-level metrics (`istio_requests_total` with response codes), L7 authorization and traffic splitting need a waypoint per namespace (FR-8.5).
-- Rollouts traffic shifting in ambient: use the Gateway API plugin on `HTTPRoute` (north-south on the Gateway, east-west via GAMMA routes bound to the waypoint), not `VirtualService`.
-- Services also expose app-level metrics (`prometheus-fastapi-instrumentator`) as a fallback analysis source.
-
-cert-manager notes:
-- Wildcard certs require DNS-01; HTTP-01 cannot issue them.
-- Let's Encrypt limits: 50 certificates per registered domain per week and 5 duplicate certificates per week. One wildcard for all vents avoids both. Use `letsencrypt-staging` in CI and demos until the flow is stable.
+Written up only: Section 9.
 
 ---
 
-## 7. Crossplane Boundary
+## 11. Open Questions And Risks
 
-| Owner | Scope | Examples |
-|---|---|---|
-| CDK | Foundational, cluster-lifetime, needed before Argo CD exists | VPC, EKS, node IAM, addon Pod Identity roles, Route 53 zone, ECR, GitHub OIDC, shared S3 buckets |
-| Crossplane | Declared in Git next to the app, lifecycle tied to an app or vent | Per-vent S3 prefix/bucket for test artifacts, SQS/SNS a service needs, optional Aurora clone per vent, per-service IAM roles |
-
-Wiring:
-- CDK creates the Crossplane Pod Identity role with a permission boundary and tag conditions: it may only create, change or delete resources tagged `managed-by=crossplane`.
-- Install Crossplane v2 so managed resources can be namespaced, which lets a vent namespace own its AWS resources and cool with it.
-- Install only the provider-family-aws sub-providers actually used (for example `provider-aws-s3`, `provider-aws-iam`, `provider-aws-rds`) to limit CRD count and memory.
-- `ProviderConfig` uses Pod Identity credentials.
-- Define one Composition per need (for example `XVentArtifacts`), so vent charts request `VentArtifacts` claims instead of raw managed resources.
-- Deletion policy `Delete` for vent resources, `Orphan` for anything baseline-critical.
-- The `previews` AppProject allows only the vent-scoped claim kinds, never raw managed resources or ProviderConfigs.
-
----
-
-## 8. Patterns To Reuse From `ryanmcafee/homelab`
-
-- `charts/gitops` split: `bootstrap` -> `addons` -> `applications` -> `previews` ApplicationSet with sync waves.
-- `previews` AppProject as the trust boundary: no Secrets, RBAC, ServiceAccounts or cluster-scoped kinds except the Namespace.
-- Per-preview Namespace with PodSecurity labels, ResourceQuota and LimitRange (`charts/applications/templates/namespaces.yaml`).
-- Istio config + waypoints (`charts/istio-config`, `charts/applications/templates/waypoints.yaml`).
-- Finalizers on every generated Application so cooling cascades cleanly.
-- Chart-side input validation that fails the render with a named error (`_preview.tpl`).
-- PostSync smoke Job per app (reuse as the Rollouts pre-promotion Job).
-- GitOps Bridge metadata written by IaC (`terragrunt/modules/gitops-bootstrap`); swap to an Argo CD cluster Secret with labels/annotations for EKS.
-- CNPG for Postgres (`charts/paperclip-database`) and cert-manager ClusterIssuers (`charts/cert-manager-cluster-issuer`).
-- CloudEvents contract layout (`contracts/events/`: envelope profile, registry, per-type data schemas, versioned types, additive-only rule, contract check in CI).
-
-Differences for AWS: Pod Identity instead of the 1Password operator; External Secrets + Secrets Manager instead of SOPS; NLB via AWS LBC; wildcard cert instead of one cert per preview host; vents keyed by eruption name, not PR number.
-
----
-
-## 8b. Alternatives Considered
-
-### Alternative 1: CI-driven CDK stack per pull request (ECS Fargate)
-
-How it works:
-1. A PR to `main` triggers a GitHub Actions deploy workflow. The runner assumes an AWS role through GitHub OIDC.
-2. The workflow sets a stage name `pr-<number>`, starts a GitHub Deployment, runs `cdk diff`, then `cdk deploy --require-approval never --context stage=pr-<number>`.
-3. CDK creates one CloudFormation stack per PR: a new VPC (public and private subnets, NAT gateways), an ECS cluster, a Fargate service behind an internet-facing ALB, and a stack output with the ALB DNS name.
-4. The workflow reads the output file and finishes the GitHub Deployment with the ALB URL, so the PR shows a link.
-5. Closing the PR (merged or not) triggers a destroy workflow: `cdk destroy --force` for that stage, then the GitHub Deployment is deactivated.
-6. A separate lint workflow runs `cdk synth` and `cfn-lint` on every PR.
-
-Strengths:
-- Very small: one stack, three workflows, no in-cluster controllers.
-- Teardown is one command because everything for a PR lives in one stack.
-- GitHub Deployments give PR-native status and URLs.
-- `cdk diff` before deploy shows the infrastructure change in the logs.
-- OIDC role assumption; no long-lived AWS keys.
-
-Why not chosen:
-| Gap | Impact against this project's requirements |
-|---|---|
-| One stack per PR in one repo | No feature groups across repos; no `main` fallback for the other service (FR-3.2 to FR-3.4) |
-| No database | No per-vent database, no snapshot, no seeding (FR-4, FR-5) |
-| New VPC, NAT gateways, ALB per PR | Slow create (VPC, NAT, ALB each take minutes); NAT hourly cost per preview; default quotas (5 VPCs, 5 Elastic IPs per region) cap concurrent previews at roughly 2 with a 2-AZ VPC (NFR-1.1, NFR-4.1, NFR-4.2) |
-| Push-based `cdk deploy` from CI | Desired state lives in workflow runs, not Git; drift is not reconciled; no single view of every environment (FR-9.1, NFR-6.1) |
-| No `concurrency` group | Two quick pushes collide; the second deploy fails while the stack is updating |
-| Fork PRs get no secrets | Previews fail for fork contributions (acceptable, but must be explicit, FR-2.4) |
-| Failed destroy is not retried or swept | Orphaned stacks keep billing (NFR-6.2) |
-| Public HTTP ALB, no auth | Preview URLs are public and unencrypted (NFR-5.3) |
-| Pre-built image only, no build step | Previews reflect infrastructure changes, not application code changes (FR-2.1) |
-| No metric-driven health gate or E2E | Deployment succeeds when CloudFormation succeeds, not when the app is healthy (FR-6, FR-7) |
-
-Ideas adopted from it:
-- GitHub Deployments API for vent status and URLs on the PR (FR-3.9).
-- One owner object per vent so teardown is a single delete (here: the vent directory in `applications-infra` plus Argo CD finalizers).
-- A diff step before apply (Argo CD diff on the rendered Applications in `applications-infra` CI).
-- GitHub OIDC for all AWS access from CI (FR-2.3).
-
----
-
-## 9. Scope Cut For A 24-Hour Assignment
-
-The addon list above is a multi-week platform. For the submission:
-
-Must ship:
-- CDK: VPC, EKS, ECR, OIDC role, Route 53, addon Pod Identity roles, GitOps Bridge.
-- Addons: EBS CSI + snapshots, Karpenter, Istio ambient + Gateway, AWS LBC, cert-manager, external-dns, ESO, kube-prometheus-stack, CNPG, Argo Workflows, Argo Events, Argo Rollouts, Crossplane + AWS provider (one Composition).
-- GitHub Actions build/push + vent registry write/delete.
-- Vent ApplicationSet covering all four scenarios, CNPG per vent from golden snapshot, golden-snapshot CronWorkflow, Rollouts blue-green with Prometheus analysis, E2E Workflow reporting a GitHub check.
-- Demo of all four scenarios plus cooling.
-
-Install but lightly configure: Kyverno (ambient + no-sidecar policies only), Loki, Tempo, OTel, Kiali, OpenCost, Reloader, oauth2-proxy, Trivy Operator.
-
-Show as designed, not built: Kargo multi-stage promotion to prod, image signing enforcement, TTL cooling, orphan sweep.
-
-Open questions:
-1. Does a UI exist, or is "E2E against UI" future scope? The assignment defines two APIs only.
-2. Baseline DB: CNPG in-cluster (same engine as vents, cheaper) or Aurora (managed; Crossplane clone path)?
-3. `applications-infra` style: DRY (pins + values, chart pulled from OCI; recommended) or fully hydrated manifests (rendered YAML committed; exact diffs, larger commits, render step in every writer)?
-4. Which registered domain for Let's Encrypt and Route 53?
-5. Single cluster for dev + staging + prod (namespaces) or separate clusters per Kargo stage?
+1. Domain and hosted zone for `*.preview.<domain>`.
+2. EKS bootstrap takes about 15-20 minutes; create the cluster first and keep it running through the build day.
+3. Headroom sizing: too small misses NFR-1.5, too large wastes money. Start at 2 vents and tune from the dashboard.
+4. Karpenter consolidation may repack nodes holding only headroom; confirm placeholders keep one spare node warm as intended.
+5. In-cluster runners execute repository code with ECR push rights; restrict them to non-fork events in the two service repos and `caldera-platform`.
+6. Golden image size must stay under the cap as fixtures grow.
+7. If ARC is not ready in time, GitHub-hosted runners add runner start-up and cold-cache time; measure and report both.
+8. Cilium bootstrap order: the cluster must be created without the VPC CNI and Cilium installed before nodes join, or nodes start with the wrong CNI. Verify EKS Pod Identity (link-local agent address) and the AWS Load Balancer Controller work with kube-proxy replacement on day one.
+9. Check the Cilium release against the EKS Kubernetes version before every cluster upgrade.
+10. Cilium and Envoy Gateway together: disable Cilium's Gateway API and Ingress controllers so only Envoy Gateway programs `Gateway` resources, and confirm proxy protocol v2 end to end (NLB target group attribute + `ClientTrafficPolicy`) before enabling the optional IP allowlist.
+11. Previews are open by default. If oauth2-proxy does not ship, preview URLs are public for the demo; the golden dataset must stay free of anything sensitive, and the locked-down mode is one value flip away.
+12. Private EKS endpoint (EKS1) means only in-VPC callers reach the API: ARC runners and the CDK kubectl handler work; the GitHub-hosted runner fallback in Section 10 and laptop `caldera vent up` against EKS need SSM port forwarding. If ARC slips, either accept EKS1 as a documented risk for the demo or run deploy jobs through SSM.
+13. SSM `SecureString` parameters cannot be created by CloudFormation, so `task secrets:put` writes them; the sweeper deletes everything under `/prismatic/` on destroy, so they must be written again after each fresh deploy.
