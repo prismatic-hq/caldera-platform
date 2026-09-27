@@ -64,8 +64,9 @@ field names so the tasks can read it:
 ## Store the workflow secrets
 
 Private repositories on the GitHub Free plan cannot read organization secrets or variables, so
-each repo gets its own copy. Sign in to 1Password (`op signin`), then run this once, and again
-after rotating the key:
+each repo gets its own copy. Enable the 1Password desktop app CLI integration first
+([DEVELOPMENT.md](DEVELOPMENT.md#1password-cli)), then run this once, and again after rotating
+the key:
 
 ```sh
 mise run secrets:github -- --region us-east-2

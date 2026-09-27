@@ -25,7 +25,8 @@ Docs: [REQUIREMENTS.md](docs/REQUIREMENTS.md), [ARCHITECTURE.md](docs/ARCHITECTU
 
 ## Quick Start
 
-Requires Python 3 and Docker; `setup.py` installs mise and every other tool ([DEVELOPMENT.md](docs/DEVELOPMENT.md)).
+Requires Python 3, Docker and the 1Password desktop app with **Settings > Developer > Integrate
+with 1Password CLI** on; `setup.py` installs mise and the rest ([DEVELOPMENT.md](docs/DEVELOPMENT.md)).
 
 ```sh
 python3 setup.py    # then, with mise on PATH: mise run test
@@ -39,7 +40,7 @@ python3 setup.py    # then, with mise on PATH: mise run test
 | `ENV=sandbox.yaml mise run synth` | `cdk synth` with cdk-nag `AwsSolutionsChecks` |
 | `mise run bootstrap` | One-time `cdk bootstrap` of the account and region |
 | `ENV=sandbox.yaml mise run deploy` | Deploy every stack with `deploy/environments/sandbox.yaml` |
-| `mise run secrets:put -- --app-id ... --installation-id ... --private-key-file app.pem` | GitHub App credentials to SSM for the runners |
+| `mise run secrets:github -- --region us-east-2` | GitHub App secrets and `AWS_REGION` on every repo, read from 1Password |
 | `mise run destroy` | Destroy every stack, then `mise run verify:clean` |
 | `mise run local:up` / `mise run local:down` | kind cluster with Cilium, KEDA and `platform/` |
 | `uv run preview env up ... --dry-run` | Print the Helm command for a preview environment |

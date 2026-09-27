@@ -36,6 +36,20 @@ echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc    # bash: activate 
 
 Without activation, run tools through mise, for example `mise exec -- kubectl version`.
 
+## 1Password CLI
+
+`mise run secrets:github` reads the GitHub App from the `Prismatic` vault with `op read`. Turn on
+the desktop app integration once, so `op` uses the app's unlock instead of a separate sign-in
+([1Password docs](https://www.1password.dev/cli/app-integration)):
+
+1. Install, open and unlock the 1Password desktop app, and select the account at the top of the
+   sidebar.
+2. Turn on system unlock: Touch ID (macOS), Windows Hello (Windows), or **Settings > Security >
+   Unlock using system authentication** (Linux, needs PolKit and an authentication agent).
+3. Open **Settings > Developer** and select **Integrate with 1Password CLI**.
+4. Check it with `op vault list`; `Prismatic` must be listed. With several accounts, choose one
+   with `op signin` or pass `--account`.
+
 ## Not managed by mise
 
 - Docker (Docker Desktop, OrbStack or Colima): needed for `mise run test`, the chart checks and kind.

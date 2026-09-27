@@ -212,5 +212,6 @@ def test_read_op_explains_a_failed_read(monkeypatch) -> None:
         raise subprocess.CalledProcessError(1, ["op"], stderr="[ERROR] not currently signed in\n")
 
     monkeypatch.setattr("scripts.put_github_secrets.subprocess.run", failed)
-    with pytest.raises(OpError, match="op signin"):
+    with pytest.raises(OpError, match="op signin") as raised:
         read_op(f"{ITEM}/pem")
+    assert "Integrate with 1Password CLI" in str(raised.value)
