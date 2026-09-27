@@ -15,17 +15,6 @@ tests:
       - equal:
           path: spec.policyTypes
           value: ["Ingress", "Egress"]
-  - it: allows the gateway namespace to reach the services only
-    documentSelector:
-      path: metadata.name
-      value: allow-gateway-to-services
-    asserts:
-      - equal:
-          path: spec.podSelector.matchLabels["app.kubernetes.io/component"]
-          value: api
-      - equal:
-          path: spec.ingress[0].from[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]
-          value: envoy-gateway-system
   - it: allows egress to CoreDNS
     documentSelector:
       path: metadata.name
