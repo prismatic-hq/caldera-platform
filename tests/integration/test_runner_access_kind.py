@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from caldera import runner_access
@@ -43,8 +45,24 @@ def runner(kubectl):
             ],
         )
     )
-    yield lambda *args, documents=None: kubectl(*args, documents=documents, as_user=RUNNER_USERNAME)
+
+    def as_runner(*args: str, documents: list[dict] | None = None):
+        return kubectl(*args, documents=documents, as_user=RUNNER_USERNAME)
+
+    wait_for_policy(as_runner)
+    yield as_runner
     kubectl("delete", "namespace", "preview-kind-check", "--ignore-not-found", "--wait=true")
+
+
+def wait_for_policy(as_runner, timeout: float = 60) -> None:
+    """Admission policies take effect a few seconds after they are created."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        probe = as_runner("create", "namespace", "policy-probe", "--dry-run=server")
+        if probe.returncode != 0:
+            return
+        time.sleep(1)
+    pytest.fail(f"{runner_access.SCOPE_POLICY} did not take effect within {timeout:g}s")
 
 
 @pytest.mark.parametrize("namespace", [DEPLOYER_NAMESPACE, "kube-system", "default"])
