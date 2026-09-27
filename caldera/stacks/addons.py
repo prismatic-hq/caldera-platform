@@ -7,7 +7,13 @@ from aws_cdk import aws_iam as iam
 from constructs import Construct, IConstruct
 
 from caldera import charts
-from caldera.config import REPO_ROOT, SSM_PREFIX, PlatformConfig
+from caldera.config import (
+    GITHUB_APP_KEYS,
+    REPO_ROOT,
+    SSM_PREFIX,
+    PlatformConfig,
+    github_app_parameter,
+)
 from caldera.constructs.cleanup import CleanupNetwork, CleanupProps, CleanupResource, vpc_arn
 from caldera.constructs.pod_identity import pod_identity_role
 from caldera.policies import load_balancer_controller_statements
@@ -352,15 +358,8 @@ class AddonsStack(Stack):
                 "secretStoreRef": {"kind": "ClusterSecretStore", "name": "parameter-store"},
                 "target": {"name": GITHUB_APP_SECRET},
                 "data": [
-                    {
-                        "secretKey": key,
-                        "remoteRef": {"key": f"{SSM_PREFIX}github-app/{key.replace('_', '-')}"},
-                    }
-                    for key in (
-                        "github_app_id",
-                        "github_app_installation_id",
-                        "github_app_private_key",
-                    )
+                    {"secretKey": key, "remoteRef": {"key": github_app_parameter(key)}}
+                    for key in GITHUB_APP_KEYS
                 ],
             },
         }

@@ -9,6 +9,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SERVICES_FILE = REPO_ROOT / "services.yaml"
 SSM_PREFIX = "/prismatic/"
 PLATFORM_TAG = "prismatic:platform"
+GITHUB_APP_KEYS = ("github_app_id", "github_app_installation_id", "github_app_private_key")
+
+
+def github_app_parameter(key: str) -> str:
+    """SSM parameter that holds one GitHub App credential for the ARC runners."""
+    return f"{SSM_PREFIX}github-app/{key.replace('_', '-')}"
 
 
 def parse_list(value: object) -> tuple[str, ...]:
