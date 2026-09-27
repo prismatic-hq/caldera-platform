@@ -2,7 +2,7 @@ apiVersion: v2
 name: services
 description: Umbrella chart that deploys any set of services plus their shared Postgres and network policies
 type: application
-version: 0.5.0
+version: 0.6.0
 appVersion: "0.1.0"
 maintainers:
   - name: ryanmcafee
