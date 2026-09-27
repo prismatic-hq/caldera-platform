@@ -5,6 +5,7 @@ import pytest
 from preview_cli.commands import (
     DeployedRelease,
     Target,
+    apply_command,
     down_commands,
     helm_test_commands,
     image_tag,
@@ -86,15 +87,27 @@ def test_up_passes_the_kube_context_to_helm() -> None:
     assert command[-2:] == ["--kube-context", "kind-caldera"]
 
 
-def test_list_environments_reads_preview_helm_releases() -> None:
+def test_list_environments_reads_labelled_preview_namespaces() -> None:
     assert list_environments_command(Target(context="kind-caldera")) == [
-        "helm",
-        "list",
-        "--all-namespaces",
-        "--short",
-        "--filter",
-        "^preview-",
-        "--kube-context",
+        "kubectl",
+        "get",
+        "namespaces",
+        "--selector",
+        "prismatic.dev/environment-kind=preview",
+        "--output",
+        "jsonpath={.items[*].metadata.name}",
+        "--context",
+        "kind-caldera",
+    ]
+
+
+def test_apply_reads_manifests_from_stdin() -> None:
+    assert apply_command(Target(context="kind-caldera")) == [
+        "kubectl",
+        "apply",
+        "--filename",
+        "-",
+        "--context",
         "kind-caldera",
     ]
 

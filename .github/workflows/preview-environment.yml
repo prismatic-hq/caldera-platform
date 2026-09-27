@@ -31,6 +31,7 @@ permissions:
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
   HELM_VERSION: v4.3.0
+  KUBECTL_VERSION: v1.35.0
 
 jobs:
   resolve:
@@ -80,6 +81,9 @@ jobs:
       - uses: azure/setup-helm@v5.0.1
         with:
           version: ${{ env.HELM_VERSION }}
+      - uses: azure/setup-kubectl@v5.1.0
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
       - run: uv sync --locked
       - id: deploy
         env:
