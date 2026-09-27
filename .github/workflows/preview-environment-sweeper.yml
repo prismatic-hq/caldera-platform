@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   sweep:
-    runs-on: ubuntu-latest
+    runs-on: caldera-platform-runners
     steps:
       - name: Stub (FR-4.10)
         run: echo "preview environment sweeper not implemented; would tear down preview environments with no branch or no push for 72h"
