@@ -2,7 +2,7 @@ apiVersion: v2
 name: vent
 description: One preview environment (vent) with tremor-api, steward-api and a golden Postgres
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "0.1.0"
 maintainers:
   - name: ryanmcafee

@@ -7,4 +7,14 @@ image:
 services:
   tremor:
     image:
+      repository: tremor-api
       tag: sha-a1b2c3d
+  steward:
+    image:
+      repository: steward-api
+      tag: main
+  magma:
+    image:
+      repository: magma-api
+      tag: sha-0f9e8d7
+    port: 8080

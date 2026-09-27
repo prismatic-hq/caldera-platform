@@ -1,5 +1,6 @@
 {{- $vent := include "vent.name" . }}
-{{- range $name, $service := .Values.services }}
+{{- range $name, $overrides := .Values.services }}
+{{- $service := mustMergeOverwrite (deepCopy $.Values.serviceDefaults) $overrides }}
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
