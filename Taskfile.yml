@@ -43,7 +43,7 @@ tasks:
   chart:test:
     internal: true
     cmds:
-      - docker run --rm -v "$PWD:/apps" {{.HELM_UNITTEST_IMAGE}} charts/vent
+      - docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/apps" {{.HELM_UNITTEST_IMAGE}} charts/vent
       - >-
         docker run --rm -v "{{.GIT_COMMON_DIR}}:{{.GIT_COMMON_DIR}}" -v "$PWD:$PWD" -w "$PWD" {{.CT_IMAGE}}
         sh -c 'git config --global --add safe.directory "*" && ct lint --charts charts/vent --target-branch main'
