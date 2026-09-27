@@ -26,7 +26,7 @@ def test_up_runs_helm_upgrade_install_into_the_environment_namespace() -> None:
         "upgrade",
         "--install",
         "preview-quake-alerts",
-        "charts/preview-environment",
+        "charts/services",
     ]
     assert "--create-namespace" in command
     assert "--wait" in command

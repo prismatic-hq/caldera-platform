@@ -169,7 +169,7 @@ def up(
     sha_for: ShaForOption = None,
     services_file: ServicesFileOption = DEFAULT_SERVICES_FILE,
     context: ContextOption = None,
-    chart: ChartOption = "charts/preview-environment",
+    chart: ChartOption = "charts/services",
     registry: RegistryOption = None,
     dry_run: DryRun = False,
 ) -> None:
@@ -195,7 +195,7 @@ def down(
     sha_for: ShaForOption = None,
     services_file: ServicesFileOption = DEFAULT_SERVICES_FILE,
     context: ContextOption = None,
-    chart: ChartOption = "charts/preview-environment",
+    chart: ChartOption = "charts/services",
     registry: RegistryOption = None,
     dry_run: DryRun = False,
 ) -> None:

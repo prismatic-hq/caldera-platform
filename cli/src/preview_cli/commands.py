@@ -8,7 +8,7 @@ Command = list[str]
 
 @dataclass(frozen=True)
 class Target:
-    chart: str = "charts/preview-environment"
+    chart: str = "charts/services"
     context: str | None = None
     registry: str | None = None
     timeout: str = "5m"
