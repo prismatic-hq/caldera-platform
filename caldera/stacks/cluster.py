@@ -1,4 +1,4 @@
-from aws_cdk import Duration, Fn, RemovalPolicy, Stack
+from aws_cdk import CfnOutput, Duration, Fn, RemovalPolicy, Stack
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_eks_v2 as eks
 from aws_cdk import aws_events as events
@@ -110,6 +110,30 @@ class ClusterStack(Stack):
             addon.node.add_dependency(self.system_nodes)
         self.karpenter = self._karpenter()
         self.karpenter.node.add_dependency(*self.addons)
+        self.admin_role = self._admin_access()
+
+    def _admin_access(self) -> iam.Role:
+        principals = self.config.cluster_admin_principals
+        trusted: iam.IPrincipal = (
+            iam.CompositePrincipal(*(iam.ArnPrincipal(arn) for arn in principals))
+            if principals
+            else iam.AccountRootPrincipal()
+        )
+        role = iam.Role(self, "ClusterAdminRole", assumed_by=trusted)
+        eks.AccessEntry(
+            self,
+            "ClusterAdminAccess",
+            cluster=self.cluster,
+            principal=role.role_arn,
+            access_policies=[
+                eks.AccessPolicy.from_access_policy_name(
+                    "AmazonEKSClusterAdminPolicy", access_scope_type=eks.AccessScopeType.CLUSTER
+                )
+            ],
+        )
+        CfnOutput(self, "ClusterAdminRoleArn", value=role.role_arn)
+        CfnOutput(self, "ClusterName", value=self.cluster.cluster_name)
+        return role
 
     def associate(
         self,
