@@ -6,7 +6,7 @@ Primary goal: a developer pushes a branch and has working, seeded, isolated URLs
 Repos:
 | Repo | Owns |
 |---|---|
-| `prismatic-hq/caldera-platform` | CDK app (VPC, EKS, addons, ECR, IAM), the `preview-environment` Helm chart, the `preview` CLI, reusable workflows, `golden-seeder`, golden DB image build, E2E suite, CloudEvents contracts, local dev (kind + Tilt) |
+| `prismatic-hq/caldera-platform` | CDK app (VPC, EKS, addons, ECR, IAM), the `services` umbrella and `service` Helm charts, the `preview` CLI, reusable workflows, `golden-seeder`, golden DB image build, E2E suite, CloudEvents contracts, local dev (kind + Tilt) |
 | `prismatic-hq/tremor-api` | Seismic signal streams and alerts. FastAPI CRUD, Dockerfile, Alembic migrations |
 | `prismatic-hq/steward-api` | Resource and operations management (sites, crews, work orders). FastAPI CRUD, Dockerfile, Alembic migrations |
 
@@ -86,7 +86,7 @@ Optimistic start: on push, the workflow creates the preview environment with the
 | FR-4.3 | Scenario A/B: branch in one repo only -> preview environment with that branch plus the other service's latest `main` digest. |
 | FR-4.4 | Scenario C1: `feature/<name>` in both repos -> one preview environment running both branches; the second push updates the existing preview environment. |
 | FR-4.5 | Scenario C2: unrelated branches in both repos -> two preview environments, each with the other service on `main`. |
-| FR-4.6 | Deploy = `preview env up`, which runs `helm upgrade --install preview-<name> charts/preview-environment -n preview-<name> --create-namespace --wait` with both image digests and the `dataset-version`. The same command runs in CI and on a laptop. |
+| FR-4.6 | Deploy = `preview env up`, which runs `helm upgrade --install preview-<name> charts/services -n preview-<name> --create-namespace --wait` with both image digests and the `dataset-version`. The same command runs in CI and on a laptop. |
 | FR-4.7 | URLs: `https://<service>-<name>.preview.<domain>`, one level under `preview` so one wildcard certificate and one wildcard DNS record cover every preview environment. Names that exceed the 63-character DNS label fail with a clear error. |
 | FR-4.8 | The workflow creates a GitHub Deployment per preview environment and posts URLs, timings and the E2E result to the commit and PR. |
 | FR-4.9 | Branch deleted (GitHub `delete` event; "automatically delete head branches" is on, so merges also fire it): if no branch in the preview environment remains, `preview env down`; otherwise redeploy with the deleted service on `main`. |
@@ -119,7 +119,7 @@ Optimistic start: on push, the workflow creates the preview environment with the
 |---|---|
 | FR-7.1 | PriorityClasses: `preview-headroom` (-10, `preemptionPolicy: Never`), `preview-environment` (100), `baseline` (1000), plus system classes for addons. |
 | FR-7.2 | A headroom Deployment of pause pods sized to at least 2 preview environments' requests runs on the preview-environments NodePool. Real preview environment pods preempt them instantly; the evicted placeholders go Pending and Karpenter adds capacity in the background. |
-| FR-7.3 | A KEDA `ScaledObject` sizes the headroom Deployment from two triggers, taking the larger: a `cron` trigger (working-hours floor, zero at night) and a `kubernetes-workload` trigger counting running preview environment pods (label `app.kubernetes.io/part-of=preview-environment`), so spare capacity grows with active preview environments without logic in the CLI. |
+| FR-7.3 | A KEDA `ScaledObject` sizes the headroom Deployment from two triggers, taking the larger: a `cron` trigger (working-hours floor, zero at night) and a `kubernetes-workload` trigger counting running preview environment pods (label `prismatic.dev/environment-kind=preview`), so spare capacity grows with active preview environments without logic in the CLI. |
 | FR-7.4 | Karpenter NodePool `preview-environments`: Spot and On-Demand fallback, several instance families, consolidation after 5 minutes of underuse. NodePool `baseline`: On-Demand. Both NodePools set the startup taint `node.cilium.io/agent-not-ready=true:NoExecute`, so no pod lands on a node before Cilium is ready. |
 | FR-7.5 | A pre-pull DaemonSet keeps `main` service images, the shared base image and the golden DB image on every preview environment node. If measured pulls on new nodes become significant, use a Bottlerocket data-volume snapshot with pre-cached images in the Karpenter node class. |
 | FR-7.6 | Preview environment pods set tight requests (for example 100m CPU / 256Mi per service, 250m / 512Mi for Postgres) so one node holds many preview environments. |
@@ -142,7 +142,7 @@ Optimistic start: on push, the workflow creates the preview environment with the
 ### FR-10 Local development
 | ID | Requirement |
 |---|---|
-| FR-10.1 | `task local:up` creates a kind cluster with its default CNI disabled and Cilium installed, plus the same `preview-environment` chart, golden DB image and PriorityClasses, so network policies and the isolation test behave the same locally and in CI. |
+| FR-10.1 | `task local:up` creates a kind cluster with its default CNI disabled and Cilium installed, plus the same `services` chart, golden DB image and PriorityClasses, so network policies and the isolation test behave the same locally and in CI. |
 | FR-10.2 | `preview env up --context kind-caldera` runs the full preview environment lifecycle locally, including feature-group resolution against local branches. |
 | FR-10.3 | Tilt provides the inner loop: code changes sync into the running pod and FastAPI reloads in seconds, without an image rebuild. |
 | FR-10.4 | CI runs the chart on kind (`ct install`) on every chart change, using the same commands. |
@@ -163,7 +163,7 @@ preview env up --repo R --branch B --sha S
       other_ref = main
   image(R)     = sha-S if built, else previous image of this preview environment or main (optimistic start)
   image(other) = latest digest for other_ref
-  helm upgrade --install preview-<name> charts/preview-environment -n preview-<name> ...
+  helm upgrade --install preview-<name> charts/services -n preview-<name> ...
 
 preview env down --repo R --branch B
   if the other repo still has feature/<name>: redeploy with R on main
@@ -216,8 +216,8 @@ Login with oauth2-proxy (in scope if time permits):
 - Authorization rules can then use the identity headers oauth2-proxy returns (user, email, groups), for example limiting a preview environment to one GitHub team.
 
 Why this stays a platform-only change:
-- Every preview environment `HTTPRoute` attaches to one shared `Gateway` listener (`parentRefs` set by the `preview-environment` chart), and the chart labels each route `prismatic.dev/exposure: preview`. Policies target the Gateway (or the labeled routes) once and cover every preview environment.
-- Services hold no auth logic and the `preview-environment` chart has no auth settings, so adding or changing auth needs no service code, chart or pipeline changes.
+- Every preview environment `HTTPRoute` attaches to one shared `Gateway` listener (`parentRefs` set by the `service` chart), and `preview env up` labels each route `prismatic.dev/exposure: preview`. Policies target the Gateway (or the labeled routes) once and cover every preview environment.
+- Services hold no auth logic and the `services` and `service` charts have no auth settings, so adding or changing auth needs no service code, chart or pipeline changes.
 - In-cluster callers (the E2E Job, probes) use Service names, not the gateway, so edge auth never breaks tests or health checks.
 
 ### 4b. Full teardown with `cdk destroy --all`
@@ -276,7 +276,7 @@ Suppression policy:
 Checks beyond cdk-nag (runtime and in-cluster):
 | Area | Check |
 |---|---|
-| Helm-rendered Kubernetes objects (`preview-environment` chart, addon values) | `trivy config` on rendered manifests in CI; failures block the chart change |
+| Helm-rendered Kubernetes objects (`services` and `service` charts, addon values) | `trivy config` on rendered manifests in CI; failures block the chart change |
 | EKS node and control plane configuration | `kube-bench` (CIS EKS benchmark) Job after cluster creation, report stored as an artifact |
 | Runtime AWS resources (NLB, Karpenter instances) | Controller settings enforce the same rules: NLB access logs and TLS policy via Load Balancer Controller annotations, IMDSv2 and encrypted volumes via `EC2NodeClass`; AWS Security Hub (AWS Foundational Security Best Practices) optional during the demo window |
 
@@ -389,7 +389,7 @@ Pre-created namespaces with services and databases, claimed on push. Not needed:
 7. Show headroom preemption: placeholders evicted, preview environment pods running, Karpenter adding a node in the background.
 8. Delete branches -> preview environments are torn down in under a minute.
 9. Run the same `preview env up` on kind locally.
-10. Walk the code: CDK stacks, `preview-environment` chart, `preview` CLI, `preview-environment.yml`, golden image build.
+10. Walk the code: CDK stacks, `services` and `service` charts, `preview` CLI, `preview-environment.yml`, golden image build.
 
 ---
 
@@ -398,7 +398,7 @@ Pre-created namespaces with services and databases, claimed on push. Not needed:
 Adopt when the service count, team count or release process outgrows push-based Helm: roughly 5+ services, several teams, progressive delivery with automated rollback, or auditors asking for one versioned record of what runs where.
 
 - Argo CD bootstrapped by CDK (GitOps Bridge); a desired-state repo written by automation; Git files ApplicationSets with one Application per service per environment.
-- `helm-charts` repo publishing the `preview-environment` chart split into `prismatic-service` and `prismatic-environment`, OCI in ECR.
+- `helm-charts` repo publishing the `service` and `services` charts, OCI in ECR.
 - Kargo promotion `dev -> staging -> prod`; Argo Rollouts with Prometheus analysis.
 - Istio ambient, Crossplane, Kyverno, kube-prometheus-stack; Argo Events + Workflows with CloudEvents on NATS JetStream.
 

@@ -19,7 +19,7 @@ same inputs always give the same tag and checksum (FR-6.3).
 
 ## Runtime contract
 
-- Runs as a non-root user (uid 10001) so the `preview-environment` chart security context applies unchanged.
+- Runs as a non-root user (uid 10001) so the `services` chart security context applies unchanged.
 - The entrypoint sets the role password from `POSTGRES_PASSWORD` with `ALTER ROLE` before
   accepting connections (FR-5.8), because every preview environment starts from the same data directory.
 - The data directory is copied to the preview environment's `emptyDir` at start; a pod restart resets the preview environment.
