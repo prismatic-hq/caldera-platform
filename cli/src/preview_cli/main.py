@@ -2,6 +2,8 @@ import json
 import os
 import shlex
 import subprocess
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Annotated
@@ -35,6 +37,7 @@ from preview_cli.resolver import (
     resolve_push,
     validate_environment_name,
 )
+from preview_cli.timings import Stopwatch, summary_markdown
 
 app = typer.Typer(no_args_is_help=True)
 env_app = typer.Typer(
@@ -92,9 +95,21 @@ GitHubOutputOption = Annotated[
     Path | None,
     typer.Option("--github-output", envvar="GITHUB_OUTPUT", help="File for GitHub step outputs"),
 ]
+StepSummaryOption = Annotated[
+    Path | None,
+    typer.Option(
+        "--github-step-summary", envvar="GITHUB_STEP_SUMMARY", help="File for the timing table"
+    ),
+]
 DEFAULT_SERVICES_FILE = Path("services.yaml")
 GOLDEN_DB_REPOSITORY = "golden-db"
 EXPECTED_ERRORS = (ValueError, LookupError, OSError, BotoCoreError, ClientError)
+
+
+@dataclass(frozen=True)
+class Report:
+    github_output: Path | None = None
+    step_summary: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -103,7 +118,7 @@ class DeployOptions:
     domain: str | None
     offline: bool
     dry_run: bool
-    github_output: Path | None
+    report: Report
 
 
 def _github() -> GitHub:
@@ -186,6 +201,23 @@ def _run(commands: list[Command], dry_run: bool) -> None:
             raise typer.Exit(code=error.returncode) from error
 
 
+@contextmanager
+def _timed(command: str, report: Report, environment: str = "") -> Iterator[Stopwatch]:
+    stopwatch = Stopwatch(command, environment)
+    try:
+        yield stopwatch
+    finally:
+        _publish_timings(stopwatch.record(), report)
+
+
+def _publish_timings(record: dict, report: Report) -> None:
+    typer.echo(json.dumps({"timings": record}))
+    _write_outputs(report.github_output, {"timings": json.dumps(record)})
+    if report.step_summary is not None:
+        with report.step_summary.open("a") as file:
+            file.write(summary_markdown(record))
+
+
 def _deployed_release(plan: PreviewPlan, target: Target, dry_run: bool) -> DeployedRelease | None:
     if dry_run or not plan.joins_existing:
         return None
@@ -252,27 +284,34 @@ def _deploy(
     shas: dict[str, str],
     target: Target,
     options: DeployOptions,
+    stopwatch: Stopwatch,
     pushed: str | None = None,
 ) -> None:
-    ecr = None if options.offline else _ecr()
-    parameters = None if options.offline else _parameters()
-    dataset_version = _or_exit(_dataset_version, options.dataset_version, parameters)
-    deployed = _or_exit(_deployed_release, plan, target, options.dry_run)
-    images = _or_exit(_choose_images, services, shas, ecr, deployed)
-    golden_tag = _or_exit(_golden_tag, dataset_version, ecr)
-    domain = _or_exit(_domain, options.domain, parameters)
+    with stopwatch.stage("images"):
+        ecr = None if options.offline else _ecr()
+        parameters = None if options.offline else _parameters()
+        dataset_version = _or_exit(_dataset_version, options.dataset_version, parameters)
+        deployed = _or_exit(_deployed_release, plan, target, options.dry_run)
+        images = _or_exit(_choose_images, services, shas, ecr, deployed)
+        golden_tag = _or_exit(_golden_tag, dataset_version, ecr)
+        domain = _or_exit(_domain, options.domain, parameters)
     target = replace(target, registry=target.registry or (ecr.registry if ecr else None))
     tags = {name: choice.tag for name, choice in images.items()}
-    commands = recover_commands(plan.release, deployed, target) if deployed else []
-    commands += up_commands(
+    if deployed and (recovery := recover_commands(plan.release, deployed, target)):
+        with stopwatch.stage("recover"):
+            _run(recovery, options.dry_run)
+    dependencies, upgrade = up_commands(
         plan, services.services, tags, dataset_version, target, domain=domain, golden_tag=golden_tag
     )
-    _run(commands, options.dry_run)
+    with stopwatch.stage("chart_dependencies"):
+        _run([dependencies], options.dry_run)
+    with stopwatch.stage("helm_upgrade"):
+        _run([upgrade], options.dry_run)
     summary = _summary(plan, images, dataset_version, domain)
     typer.echo(json.dumps(summary, sort_keys=True))
     exact = pushed is None or images[pushed].source is ImageSource.SHA
     _write_outputs(
-        options.github_output,
+        options.report.github_output,
         {
             "environment": plan.environment,
             "exact-image": str(exact).lower(),
@@ -350,19 +389,24 @@ def up(
     chart: ChartOption = "charts/services",
     registry: RegistryOption = None,
     github_output: GitHubOutputOption = None,
+    step_summary: StepSummaryOption = None,
     dry_run: DryRun = False,
 ) -> None:
     """Create or update the preview environment for a pushed branch."""
     target = Target(chart=chart, context=context, registry=registry)
-    options = DeployOptions(dataset_version, domain, offline, dry_run, github_output)
-    services = _or_exit(ServiceRegistry.load, services_file)
-    pushed = _or_exit(services.by_repo, repo).name
-    sharing = _or_exit(_sharing, services, pushed, branch, branch_in or [], offline)
-    existing = _existing_environments(target, dry_run)
-    plan = _or_exit(resolve_push, services.names, pushed, branch, sharing, existing)
-    known = {**_or_exit(_parse_shas, sha_for or []), pushed: sha}
-    shas = _or_exit(_shas, services, plan, known, offline)
-    _deploy(plan, services, shas, target, options, pushed)
+    report = Report(github_output, step_summary)
+    options = DeployOptions(dataset_version, domain, offline, dry_run, report)
+    with _timed("up", report) as stopwatch:
+        with stopwatch.stage("resolve"):
+            services = _or_exit(ServiceRegistry.load, services_file)
+            pushed = _or_exit(services.by_repo, repo).name
+            sharing = _or_exit(_sharing, services, pushed, branch, branch_in or [], offline)
+            existing = _existing_environments(target, dry_run)
+            plan = _or_exit(resolve_push, services.names, pushed, branch, sharing, existing)
+            known = {**_or_exit(_parse_shas, sha_for or []), pushed: sha}
+            shas = _or_exit(_shas, services, plan, known, offline)
+        stopwatch.environment = plan.environment
+        _deploy(plan, services, shas, target, options, stopwatch, pushed)
 
 
 @env_app.command()
@@ -379,20 +423,26 @@ def down(
     chart: ChartOption = "charts/services",
     registry: RegistryOption = None,
     github_output: GitHubOutputOption = None,
+    step_summary: StepSummaryOption = None,
     dry_run: DryRun = False,
 ) -> None:
     """Tear down the preview environment for a deleted branch, or redeploy it if kept elsewhere."""
     target = Target(chart=chart, context=context, registry=registry)
-    options = DeployOptions(dataset_version, domain, offline, dry_run, github_output)
-    services = _or_exit(ServiceRegistry.load, services_file)
-    deleted = _or_exit(services.by_repo, repo).name
-    sharing = _or_exit(_sharing, services, deleted, branch, branch_in or [], offline)
-    plan = _or_exit(resolve_delete, services.names, deleted, branch, sharing)
-    if plan.action is Action.DOWN:
-        _run(down_commands(plan.environment, target), dry_run)
-        return
-    shas = _or_exit(_shas, services, plan, _or_exit(_parse_shas, sha_for or []), offline)
-    _deploy(plan, services, shas, target, options)
+    report = Report(github_output, step_summary)
+    options = DeployOptions(dataset_version, domain, offline, dry_run, report)
+    with _timed("down", report) as stopwatch:
+        with stopwatch.stage("resolve"):
+            services = _or_exit(ServiceRegistry.load, services_file)
+            deleted = _or_exit(services.by_repo, repo).name
+            sharing = _or_exit(_sharing, services, deleted, branch, branch_in or [], offline)
+            plan = _or_exit(resolve_delete, services.names, deleted, branch, sharing)
+        stopwatch.environment = plan.environment
+        if plan.action is Action.DOWN:
+            with stopwatch.stage("teardown"):
+                _run(down_commands(plan.environment, target), dry_run)
+            return
+        shas = _or_exit(_shas, services, plan, _or_exit(_parse_shas, sha_for or []), offline)
+        _deploy(plan, services, shas, target, options, stopwatch)
 
 
 @env_app.command()
@@ -400,12 +450,16 @@ def reset(
     environment: Annotated[str, typer.Option("--name")],
     services_file: ServicesFileOption = DEFAULT_SERVICES_FILE,
     context: ContextOption = None,
+    github_output: GitHubOutputOption = None,
+    step_summary: StepSummaryOption = None,
     dry_run: DryRun = False,
 ) -> None:
     """Restart the preview environment database to return it to golden data."""
     services = _or_exit(ServiceRegistry.load, services_file)
     _or_exit(validate_environment_name, environment, services.names)
-    _run(reset_commands(environment, Target(context=context)), dry_run)
+    report = Report(github_output, step_summary)
+    with _timed("reset", report, environment) as stopwatch, stopwatch.stage("reset"):
+        _run(reset_commands(environment, Target(context=context)), dry_run)
 
 
 @env_app.command("test")
@@ -413,9 +467,13 @@ def test_environment(
     environment: Annotated[str, typer.Option("--name")],
     services_file: ServicesFileOption = DEFAULT_SERVICES_FILE,
     context: ContextOption = None,
+    github_output: GitHubOutputOption = None,
+    step_summary: StepSummaryOption = None,
     dry_run: DryRun = False,
 ) -> None:
     """Run the preview environment's E2E suite (Helm test hooks) and stream its logs."""
     services = _or_exit(ServiceRegistry.load, services_file)
     _or_exit(validate_environment_name, environment, services.names)
-    _run(helm_test_commands(environment, Target(context=context)), dry_run)
+    report = Report(github_output, step_summary)
+    with _timed("test", report, environment) as stopwatch, stopwatch.stage("e2e"):
+        _run(helm_test_commands(environment, Target(context=context)), dry_run)
