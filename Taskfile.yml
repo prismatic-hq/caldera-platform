@@ -19,7 +19,7 @@ tasks:
       - uv run pre-commit install
 
   test:
-    desc: Run pytest and the preview-environment chart checks (helm unittest, ct lint, kubeconform, trivy)
+    desc: Run pytest and the tests for checking helm charts (helm unittest, ct lint, kubeconform, trivy)
     cmds:
       - uv run pytest
       - task: chart:test
