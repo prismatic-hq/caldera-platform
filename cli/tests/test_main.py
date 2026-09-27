@@ -1,5 +1,6 @@
 import json
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -9,6 +10,7 @@ from typer.testing import CliRunner
 from preview_cli import main
 from preview_cli.aws import Image
 from preview_cli.github import API_URL, GitHub
+from preview_cli.lock import Lease
 
 runner = CliRunner()
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -23,6 +25,7 @@ def no_external_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(main, "_github", fail)
     monkeypatch.setattr(main, "_ecr", fail)
     monkeypatch.setattr(main, "_parameters", fail)
+    monkeypatch.setattr(main, "_lease_store", fail)
     monkeypatch.chdir(REPO_ROOT)
     monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
@@ -369,9 +372,75 @@ def test_missing_golden_image_fails_clearly(aws) -> None:
     assert "golden-db:ds-42 is not in ECR" in output
 
 
-def test_up_reuses_the_current_image_and_clears_a_pending_release(
-    aws, monkeypatch: pytest.MonkeyPatch
+class MemoryLeases:
+    def __init__(self, leases: dict[str, Lease] | None = None) -> None:
+        self.leases = leases or {}
+        self.holders: list[str] = []
+
+    def get(self, name: str) -> Lease | None:
+        return self.leases.get(name)
+
+    def create(self, name: str, lease: Lease) -> None:
+        self.holders.append(lease.holder)
+        self.leases[name] = lease
+
+    replace = create
+
+    def delete(self, name: str) -> None:
+        del self.leases[name]
+
+
+@pytest.fixture
+def leases(monkeypatch: pytest.MonkeyPatch):
+    def install(store: MemoryLeases) -> MemoryLeases:
+        monkeypatch.setattr(main, "_lease_store", lambda namespace, context: store)
+        return store
+
+    return install
+
+
+def fresh_lease(holder: str) -> Lease:
+    return Lease(holder, datetime.now(UTC), 120, "1")
+
+
+def test_up_waits_for_the_environment_lock_and_times_out_clearly(
+    leases, aws, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    aws(ALL_IMAGES, PARAMETERS)
+    leases(MemoryLeases({"preview-quake-alerts": fresh_lease("prismatic-hq/steward-api/7")}))
+    monkeypatch.setattr(
+        main.subprocess, "run", lambda command, **_: subprocess.CompletedProcess(command, 0, "", "")
+    )
+
+    code, output = invoke(*UP_ARGS, "--lock-wait", "0", "--context", "kind-x")
+
+    assert code == 2
+    assert "held by prismatic-hq/steward-api/7" in output
+
+
+def test_reset_releases_the_lock_when_the_helm_upgrade_fails(
+    leases, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = leases(MemoryLeases())
+
+    def run(command: list[str], **kwargs: object) -> None:
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(main.subprocess, "run", run)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "prismatic-hq/tremor-api")
+    monkeypatch.setenv("GITHUB_RUN_ID", "42")
+
+    code, _ = invoke("env", "reset", "--name", "quake-alerts")
+
+    assert code == 1
+    assert store.holders == ["prismatic-hq/tremor-api/42"]
+    assert store.leases == {}
+
+
+def test_up_reuses_the_current_image_and_clears_a_pending_release(
+    aws, leases, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = leases(MemoryLeases())
     aws({("steward-api", "sha-0f9e8d7"), ("golden-db", "ds-42")}, PARAMETERS)
     status = {
         "info": {"status": "pending-upgrade"},
@@ -407,6 +476,9 @@ def test_up_reuses_the_current_image_and_clears_a_pending_release(
     assert "name: preview-quake-alerts" in applied[0]
     assert "services.tremor.image.tag=sha-9999999@sha256:9" in calls[-1]
     assert json_line(output, "images")["images"]["tremor"]["source"] == "current"
+    assert len(store.holders) == 1
+    assert store.leases == {}
+    assert "lock" in json_line(output, "timings")["timings"]["stages"]
 
 
 def test_test_dry_run_prints_the_helm_test_command() -> None:
@@ -448,6 +520,7 @@ def test_up_publishes_stage_timings(aws, tmp_path: Path) -> None:
     assert timings["environment"] == "quake-alerts"
     assert list(timings["stages"]) == [
         "resolve",
+        "heads",
         "namespace",
         "images",
         "chart_dependencies",
