@@ -2,7 +2,12 @@ import pytest
 
 from caldera.runner_access import DEPLOYER_ROLE, manifests
 from caldera.stacks.ci_access import RUNNER_NAMESPACE, RUNNER_SERVICE_ACCOUNT
-from preview_cli.access import DEPLOYER_NAMESPACE, DEPLOYER_SERVICE_ACCOUNT, NAMESPACE_ROLE
+from preview_cli.access import (
+    DEPLOYER_NAMESPACE,
+    DEPLOYER_SERVICE_ACCOUNT,
+    LOCK_NAMESPACE,
+    NAMESPACE_ROLE,
+)
 
 
 def by_kind(kind: str) -> list[dict]:
@@ -75,3 +80,29 @@ def test_admission_policy_confines_the_runner_to_preview_namespaces() -> None:
         "policyName": policy["metadata"]["name"],
         "validationActions": ["Deny"],
     }
+
+
+def test_runner_may_only_manage_leases_in_the_lock_namespace() -> None:
+    (namespace,) = by_kind("Namespace")
+    (role,) = by_kind("Role")
+    (binding,) = by_kind("RoleBinding")
+
+    assert namespace["metadata"]["name"] == LOCK_NAMESPACE
+    assert not LOCK_NAMESPACE.startswith("preview-")
+    assert role["metadata"]["namespace"] == LOCK_NAMESPACE
+    assert role["rules"] == [
+        {
+            "apiGroups": ["coordination.k8s.io"],
+            "resources": ["leases"],
+            "verbs": ["get", "create", "update", "delete"],
+        }
+    ]
+    assert binding["metadata"]["namespace"] == LOCK_NAMESPACE
+    assert binding["roleRef"]["name"] == role["metadata"]["name"]
+    assert binding["subjects"] == [
+        {
+            "kind": "ServiceAccount",
+            "name": DEPLOYER_SERVICE_ACCOUNT,
+            "namespace": DEPLOYER_NAMESPACE,
+        }
+    ]

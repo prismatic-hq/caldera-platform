@@ -4,7 +4,12 @@ import pytest
 
 from caldera import runner_access
 from caldera.runner_access import RUNNER_USERNAME
-from preview_cli.access import DEPLOYER_NAMESPACE, DEPLOYER_SERVICE_ACCOUNT, namespace_manifests
+from preview_cli.access import (
+    DEPLOYER_NAMESPACE,
+    DEPLOYER_SERVICE_ACCOUNT,
+    LOCK_NAMESPACE,
+    namespace_manifests,
+)
 
 GITHUB_APP_SECRET = "github-app"
 BYSTANDER = "bystander"
@@ -137,3 +142,8 @@ def test_runner_cannot_escape_preview_namespaces(
     must(runner("apply", "-f", "-", documents=namespace_manifests("kind-check")))
 
     denied(runner(*args), reason)
+
+
+def test_runner_can_hold_leases_but_not_read_secrets_in_the_lock_namespace(runner) -> None:
+    assert runner("auth", "can-i", "create", "leases", "-n", LOCK_NAMESPACE).stdout.strip() == "yes"
+    assert runner("auth", "can-i", "get", "secrets", "-n", LOCK_NAMESPACE).stdout.strip() == "no"
