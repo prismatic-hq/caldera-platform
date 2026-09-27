@@ -22,3 +22,11 @@ metadata:
 value: 1000
 globalDefault: false
 description: The long-lived dev environment built from main.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: platform
+value: 10000
+globalDefault: false
+description: Cluster addons every environment depends on; preview and baseline pods never preempt them.

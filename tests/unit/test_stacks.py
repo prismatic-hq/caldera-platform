@@ -5,7 +5,8 @@ import pytest
 from aws_cdk.assertions import Match, Template
 
 from cdk.platform import build_platform
-from cdk.stacks.addons import KUBECTL_CONCURRENCY
+from cdk.stacks.addons import KUBECTL_CONCURRENCY, PLATFORM_PRIORITY
+from cdk.stacks.cluster import PREVIEW_TAINT
 
 LATEST_RUNTIMES = {"python3.14", "nodejs24.x"}
 
@@ -159,6 +160,27 @@ def test_karpenter_node_pools_carry_the_cilium_startup_taint(templates) -> None:
     assert pools["preview-environments"]["spec"]["disruption"]["consolidateAfter"] == "5m"
 
 
+def test_only_preview_environment_nodes_are_tainted_for_preview_pods(templates) -> None:
+    manifests = [
+        json.loads(r["Properties"]["Manifest"])
+        for r in resources(templates["Cluster"], "Custom::AWSCDK-EKS-KubernetesResource").values()
+        if isinstance(r["Properties"]["Manifest"], str)
+    ]
+    taints = {
+        m["metadata"]["name"]: m["spec"]["template"]["spec"].get("taints")
+        for doc in manifests
+        for m in doc
+        if m["kind"] == "NodePool"
+    }
+
+    assert PREVIEW_TAINT == {
+        "key": "prismatic.dev/preview",
+        "value": "true",
+        "effect": "NoSchedule",
+    }
+    assert taints == {"preview-environments": [PREVIEW_TAINT], "baseline": None}
+
+
 def test_karpenter_interruption_queue_has_dlq_and_enforces_ssl(templates) -> None:
     cluster = templates["Cluster"]
 
@@ -286,6 +308,70 @@ def test_addons_install_every_section_4_chart(templates) -> None:
         "external-secrets",
     }
     assert chart_names(templates["Cluster"]) == {"cilium", "karpenter"}
+
+
+def chart_values(template: Template, chart_name: str) -> list[str]:
+    return [
+        json.dumps(chart["Properties"]["Values"])
+        for chart in resources(template, "Custom::AWSCDK-EKS-HelmChart").values()
+        if chart["Properties"]["Chart"] == chart_name
+    ]
+
+
+PLATFORM_PRIORITY_VALUES = {
+    "cert-manager": ['\\"global\\":{\\"priorityClassName\\":\\"platform\\"}'],
+    "external-dns": ['\\"priorityClassName\\":\\"platform\\"'],
+    "gateway-helm": ['\\"deployment\\":{\\"priorityClassName\\":\\"platform\\"}'],
+    "keda": ['\\"priorityClassName\\":\\"platform\\"'],
+    "external-secrets": [
+        '\\"priorityClassName\\":\\"platform\\"',
+        '\\"webhook\\":{\\"priorityClassName\\":\\"platform\\"}',
+        '\\"certController\\":{\\"priorityClassName\\":\\"platform\\"}',
+    ],
+    "gha-runner-scale-set-controller": ['\\"priorityClassName\\":\\"platform\\"'],
+    "gha-runner-scale-set": [
+        '\\"listenerTemplate\\":{\\"spec\\":{\\"priorityClassName\\":\\"platform\\",'
+        '\\"containers\\":[{\\"name\\":\\"listener\\"}]}}'
+    ],
+}
+
+
+@pytest.mark.parametrize("chart_name", sorted(PLATFORM_PRIORITY_VALUES))
+def test_platform_addons_outrank_preview_environment_pods(templates, chart_name) -> None:
+    installed = chart_values(templates["Addons"], chart_name)
+
+    assert PLATFORM_PRIORITY == "platform"
+    assert installed
+    for values in installed:
+        for fragment in PLATFORM_PRIORITY_VALUES[chart_name]:
+            assert fragment in values, values
+
+
+def test_envoy_proxies_outrank_preview_environment_pods(templates) -> None:
+    [proxy] = [
+        doc
+        for r in resources(templates["Addons"], "Custom::AWSCDK-EKS-KubernetesResource").values()
+        if isinstance(r["Properties"]["Manifest"], str)
+        for doc in json.loads(r["Properties"]["Manifest"])
+        if doc["kind"] == "EnvoyProxy"
+    ]
+
+    deployment = proxy["spec"]["provider"]["kubernetes"]["envoyDeployment"]
+    assert deployment["pod"]["priorityClassName"] == PLATFORM_PRIORITY
+
+
+def test_priority_classes_exist_before_any_addon_chart(templates) -> None:
+    addons = templates["Addons"]
+    [base] = [
+        logical_id
+        for logical_id, r in resources(addons, "Custom::AWSCDK-EKS-KubernetesResource").items()
+        if isinstance(r["Properties"]["Manifest"], str)
+        and any(doc["kind"] == "PriorityClass" for doc in json.loads(r["Properties"]["Manifest"]))
+    ]
+    reachable = transitive_dependencies(addons)
+
+    for chart in resources(addons, "Custom::AWSCDK-EKS-HelmChart"):
+        assert base in reachable[chart], chart
 
 
 def test_drainer_depends_on_every_addon(templates) -> None:

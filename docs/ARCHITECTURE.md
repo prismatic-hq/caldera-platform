@@ -65,16 +65,18 @@ edge auth is a platform-only change.
 | Push to an existing preview environment | under 2 minutes | only the image tag changes; `HTTPRoute` already live |
 | Teardown | under 60s | `helm uninstall` + namespace delete |
 
-Capacity: PriorityClasses `preview-headroom` (-10, never preempts), `preview-environment` (100), `baseline` (1000).
-A pause-pod headroom Deployment holds spare preview environment capacity, sized by a KEDA `ScaledObject`.
+Capacity: PriorityClasses `preview-headroom` (-10, never preempts), `preview-environment` (100), `baseline` (1000),
+`platform` (10000, cluster addons). The `preview-environments` NodePool is tainted `prismatic.dev/preview=true:NoSchedule`;
+preview environment pods and the headroom select it and tolerate the taint, everything else runs elsewhere.
+A pause-pod headroom Deployment holds spare preview environment capacity, sized by a KEDA `cron` `ScaledObject`.
 
 ## Known gaps
 
 - One platform per account and region: ECR repositories, cleanup Lambdas and their log groups use
   fixed names (derived from `clusterName`) because CI and the teardown checks rely on them.
-- KEDA's `kubernetes-workload` trigger only counts pods in the `ScaledObject`'s own namespace, so
-  it cannot see pods in `preview-*` namespaces as FR-7.3 assumes. The cron trigger works; replace the
-  workload trigger with a Prometheus or metrics-api count across namespaces before relying on it.
+- Headroom does not grow with active preview environments: KEDA's `kubernetes-workload` trigger
+  only counts pods in the `ScaledObject`'s own namespace and there is no Prometheus, so only the cron
+  floor sizes it.
 - Event publishing (FR-9) and the golden image build (FR-6.2) are not implemented yet.
 - Not in the CDK app yet: the pre-pull DaemonSet (FR-6.5, FR-7.5), oauth2-proxy login (Section 4a),
   NLB access logs, the working-hours warm minimum for ARC runners (`minRunners` is 0) and the

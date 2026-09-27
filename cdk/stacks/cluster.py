@@ -20,6 +20,7 @@ from cdk.stacks.network import NetworkStack
 KUBERNETES_VERSION = eks.KubernetesVersion.V1_35
 CILIUM_OPERATOR = "cilium-operator"
 CILIUM_STARTUP_TAINT = {"key": "node.cilium.io/agent-not-ready", "value": "true"}
+PREVIEW_TAINT = {"key": "prismatic.dev/preview", "value": "true", "effect": "NoSchedule"}
 NODE_MANAGED_POLICIES = (
     "AmazonEKSWorkerNodePolicy",
     "AmazonEC2ContainerRegistryReadOnly",
@@ -329,7 +330,13 @@ class ClusterStack(Stack):
         }
 
     @staticmethod
-    def _node_pool(name: str, capacity_types: list[str], consolidate_after: str, cpu: str) -> dict:
+    def _node_pool(
+        name: str,
+        capacity_types: list[str],
+        consolidate_after: str,
+        cpu: str,
+        taints: list[dict] | None = None,
+    ) -> dict:
         return {
             "apiVersion": "karpenter.sh/v1",
             "kind": "NodePool",
@@ -343,6 +350,7 @@ class ClusterStack(Stack):
                             "name": "default",
                         },
                         "startupTaints": [{**CILIUM_STARTUP_TAINT, "effect": "NoExecute"}],
+                        **({"taints": taints} if taints else {}),
                         "requirements": [
                             {"key": "kubernetes.io/arch", "operator": "In", "values": ["arm64"]},
                             {
@@ -372,7 +380,9 @@ class ClusterStack(Stack):
         }
 
     def _preview_pool(self) -> dict:
-        return self._node_pool("preview-environments", ["spot", "on-demand"], "5m", "64")
+        return self._node_pool(
+            "preview-environments", ["spot", "on-demand"], "5m", "64", [PREVIEW_TAINT]
+        )
 
     def _baseline_pool(self) -> dict:
         return self._node_pool("baseline", ["on-demand"], "30m", "16")
