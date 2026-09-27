@@ -7,7 +7,14 @@ from typing import Annotated
 
 import typer
 
-from preview_cli.commands import Command, Target, down_commands, reset_commands, up_commands
+from preview_cli.commands import (
+    Command,
+    Target,
+    down_commands,
+    list_environments_command,
+    reset_commands,
+    up_commands,
+)
 from preview_cli.github import GitHub
 from preview_cli.registry import ServiceRegistry
 from preview_cli.resolver import (
@@ -107,19 +114,10 @@ def _shas(
 def _existing_environments(target: Target, dry_run: bool) -> frozenset[str]:
     if dry_run:
         return frozenset()
-    command = [
-        "kubectl",
-        "get",
-        "namespaces",
-        "-l",
-        "app.kubernetes.io/part-of=preview-environment",
-        "-o",
-        "jsonpath={.items[*].metadata.name}",
-    ]
-    if target.context:
-        command += ["--context", target.context]
-    names = subprocess.run(command, check=True, capture_output=True, text=True).stdout.split()
-    return frozenset(name.removeprefix("preview-") for name in names)
+    releases = subprocess.run(
+        list_environments_command(target), check=True, capture_output=True, text=True
+    ).stdout.split()
+    return frozenset(release.removeprefix("preview-") for release in releases)
 
 
 def _run(commands: list[Command], dry_run: bool) -> None:

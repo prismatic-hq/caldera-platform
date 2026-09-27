@@ -17,5 +17,5 @@ spec:
         desiredReplicas: "2"
     - type: kubernetes-workload
       metadata:
-        podSelector: app.kubernetes.io/part-of=preview-environment
+        podSelector: prismatic.dev/environment-kind=preview
         value: "6"

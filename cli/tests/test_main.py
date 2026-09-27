@@ -95,7 +95,9 @@ def test_up_dry_run_prints_helm_command() -> None:
     )
 
     assert code == 0
-    assert output.startswith("helm upgrade --install preview-quake-alerts charts/services")
+    build, upgrade = output.splitlines()
+    assert build == "helm dependency build charts/services"
+    assert upgrade.startswith("helm upgrade --install preview-quake-alerts charts/services")
     assert "services.steward.image.tag=sha-0f9e8d7" in output
 
 
