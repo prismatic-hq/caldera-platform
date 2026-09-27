@@ -1,6 +1,7 @@
-# GitHub App for ARC runners
+# GitHub App for ARC runners and workflows
 
-The ARC runner scale sets register with GitHub as a GitHub App. There is one scale set per
+The ARC runner scale sets register with GitHub as a GitHub App. The `golden-image` and preview
+workflows use the same app to read `caldera-platform`, `tremor-api` and `steward-api`. There is one scale set per
 repository: `caldera-platform` and every `repo` in `services.yaml`. An org owner creates the app
 once. Its credentials go to SSM Parameter Store, and External Secrets syncs them into the
 `github-app` Secret.
@@ -14,11 +15,13 @@ once. Its credentials go to SSM Parameter Store, and External Secrets syncs them
 3. Under **Webhook**, clear **Active**. ARC polls GitHub and needs no webhook.
 4. Set **Repository permissions**:
    - **Administration**: Read and write (registers repository runners)
+   - **Contents**: Read-only (workflows check out and read the other repos)
    - **Metadata**: Read-only
    - Leave every other permission set to **No access**.
 5. Under **Where can this GitHub App be installed?**, select **Only on this account**, then
    click **Create GitHub App**.
-6. Copy the **App ID** from the app's General page. Do not use the **Client ID** (`Iv23...`).
+6. Copy the **App ID** and the **Client ID** (`Iv23...`) from the app's General page. Do not use
+   the **Client secret**; nothing here uses it.
 7. Under **Private keys**, click **Generate a private key**. The browser downloads
    `<app-name>.<date>.private-key.pem`.
 
@@ -46,8 +49,19 @@ task secrets:put -- --app-id <app-id> --installation-id <installation-id> \
 After the command succeeds, delete the `.pem` or move it to a password manager. Never paste the
 key into chat, tickets or commits.
 
+## Store the workflow secrets
+
+Add two organization secrets under **Org Settings -> Secrets and variables -> Actions**, with
+repository access for `caldera-platform`, `tremor-api` and `steward-api`:
+
+- `CALDERA_APP_CLIENT_ID`: the **Client ID**
+- `CALDERA_APP_PRIVATE_KEY`: the full contents of the `.pem`
+
+Each job mints a one-hour, contents-read installation token with
+`actions/create-github-app-token`.
+
 ## Rotate the key
 
 1. Generate a new private key on the app page.
-2. Run `task secrets:put` with the new `.pem`.
+2. Run `task secrets:put` with the new `.pem` and update `CALDERA_APP_PRIVATE_KEY`.
 3. Delete the old key on the app page.

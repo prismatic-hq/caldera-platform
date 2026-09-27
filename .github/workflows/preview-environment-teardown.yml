@@ -15,9 +15,12 @@ on:
         type: string
         default: main
     secrets:
-      CALDERA_TOKEN:
-        description: Token that can read caldera-platform and both service repos
-        required: false
+      CALDERA_APP_CLIENT_ID:
+        description: Client ID of the GitHub App that can read caldera-platform and both service repos
+        required: true
+      CALDERA_APP_PRIVATE_KEY:
+        description: Private key of that GitHub App
+        required: true
 
 permissions:
   contents: read
@@ -34,11 +37,19 @@ jobs:
     outputs:
       environment: ${{ steps.plan.outputs.environment }}
     steps:
+      - id: app-token
+        uses: actions/create-github-app-token@v3.2.0
+        with:
+          client-id: ${{ secrets.CALDERA_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CALDERA_APP_PRIVATE_KEY }}
+          owner: prismatic-hq
+          repositories: caldera-platform,tremor-api,steward-api
+          permission-contents: read
       - uses: actions/checkout@v7
         with:
           repository: prismatic-hq/caldera-platform
           ref: ${{ inputs.platform-ref }}
-          token: ${{ secrets.CALDERA_TOKEN || github.token }}
+          token: ${{ steps.app-token.outputs.token }}
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
@@ -55,14 +66,20 @@ jobs:
     concurrency:
       group: preview-${{ needs.resolve.outputs.environment }}
       cancel-in-progress: false
-    env:
-      GITHUB_TOKEN: ${{ secrets.CALDERA_TOKEN || github.token }}
     steps:
+      - id: app-token
+        uses: actions/create-github-app-token@v3.2.0
+        with:
+          client-id: ${{ secrets.CALDERA_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CALDERA_APP_PRIVATE_KEY }}
+          owner: prismatic-hq
+          repositories: caldera-platform,tremor-api,steward-api
+          permission-contents: read
       - uses: actions/checkout@v7
         with:
           repository: prismatic-hq/caldera-platform
           ref: ${{ inputs.platform-ref }}
-          token: ${{ secrets.CALDERA_TOKEN || github.token }}
+          token: ${{ steps.app-token.outputs.token }}
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
@@ -74,6 +91,7 @@ jobs:
           version: ${{ env.KUBECTL_VERSION }}
       - run: uv sync --locked
       - env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ inputs.repo }}
           BRANCH: ${{ inputs.branch }}
         run: uv run preview env down --repo "$REPO" --branch "$BRANCH"
