@@ -23,6 +23,7 @@ permissions:
   contents: read
 
 env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
   HELM_VERSION: v4.3.0
   KUBECTL_VERSION: v1.35.0
 

@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass
 
 from preview_cli.registry import ServiceSpec
@@ -33,12 +34,22 @@ def image_tag(sha: str) -> str:
     return f"sha-{sha[:7]}"
 
 
+@dataclass(frozen=True)
+class DeployedRelease:
+    status: str
+    revision: int
+    service_tags: dict[str, str]
+
+
 def up_commands(
     plan: PreviewPlan,
     services: tuple[ServiceSpec, ...],
-    shas: dict[str, str],
+    tags: dict[str, str],
     dataset_version: str,
     target: Target,
+    *,
+    domain: str | None = None,
+    golden_tag: str | None = None,
 ) -> list[Command]:
     namespace = plan.release
     strings = [
@@ -46,11 +57,15 @@ def up_commands(
         f"datasetVersion={dataset_version}",
         *PREVIEW_VALUES,
     ]
+    if domain:
+        strings.append(f"domain={domain}")
+    if golden_tag:
+        strings.append(f"postgres.image.tag={golden_tag}")
     numbers = []
     for service in services:
         strings += [
             f"services.{service.name}.image.repository={service.image}",
-            f"services.{service.name}.image.tag={image_tag(shas[service.name])}",
+            f"services.{service.name}.image.tag={tags[service.name]}",
         ]
         numbers.append(f"services.{service.name}.port={service.port}")
     if target.registry:
@@ -113,3 +128,42 @@ def reset_commands(environment: str, target: Target) -> list[Command]:
         ]
         + _kubectl_context(target),
     ]
+
+
+def helm_test_commands(environment: str, target: Target) -> list[Command]:
+    release = f"preview-{environment}"
+    return [
+        ["helm", "test", release, "--namespace", release, "--logs", "--timeout", target.timeout]
+        + _helm_context(target)
+    ]
+
+
+def status_command(release: str, target: Target) -> Command:
+    return [
+        "helm",
+        "status",
+        release,
+        "--namespace",
+        release,
+        "--output",
+        "json",
+    ] + _helm_context(target)
+
+
+def parse_release(status_json: str) -> DeployedRelease:
+    release = json.loads(status_json)
+    services = (release.get("config") or {}).get("services") or {}
+    tags = {
+        name: values["image"]["tag"]
+        for name, values in services.items()
+        if values.get("image", {}).get("tag")
+    }
+    return DeployedRelease(release["info"]["status"], int(release["version"]), tags)
+
+
+def recover_commands(release: str, deployed: DeployedRelease, target: Target) -> list[Command]:
+    """A cancelled deploy leaves the release pending, which blocks every later upgrade."""
+    if not deployed.status.startswith("pending-"):
+        return []
+    verb = "uninstall" if deployed.revision == 1 else "rollback"
+    return [["helm", verb, release, "--namespace", release, "--wait"] + _helm_context(target)]
