@@ -97,3 +97,19 @@ jobs:
         run: uv run python scripts/render_charts.py --out rendered
       - run: docker run --rm -v "$PWD/rendered:/r" "$KUBECONFORM_IMAGE" -strict -summary -ignore-missing-schemas /r
       - run: docker run --rm -v "$PWD/rendered:/r" "$TRIVY_IMAGE" config --exit-code 1 /r
+
+  runner-access:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - uses: helm/kind-action@v1.15.0
+        with:
+          cluster_name: runner-access
+      - name: Runner RBAC and admission policy on kind
+        env:
+          KIND_CONTEXT: kind-runner-access
+        run: uv run pytest tests/integration -q
