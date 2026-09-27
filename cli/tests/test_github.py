@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from caldera_cli.github import API_URL, GitHub
+from preview_cli.github import API_URL, GitHub
 
 
 def github(status: int, body: dict | None = None) -> GitHub:

@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from caldera_cli import main
+from preview_cli import main
 
 runner = CliRunner()
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -27,7 +27,7 @@ def invoke(*args: str) -> tuple[int, str]:
 
 def test_resolve_prints_plan_as_json() -> None:
     code, output = invoke(
-        "vent",
+        "env",
         "resolve",
         "--repo",
         "tremor-api",
@@ -39,8 +39,8 @@ def test_resolve_prints_plan_as_json() -> None:
 
     assert code == 0
     assert json.loads(output) == {
-        "vent": "quake-alerts",
-        "release": "vent-quake-alerts",
+        "environment": "quake-alerts",
+        "release": "preview-quake-alerts",
         "action": "up",
         "refs": {"tremor": "feature/quake-alerts", "steward": "feature/quake-alerts"},
         "joins_existing": False,
@@ -48,10 +48,10 @@ def test_resolve_prints_plan_as_json() -> None:
 
 
 def test_resolve_skips_lookup_for_non_feature_branches() -> None:
-    code, output = invoke("vent", "resolve", "--repo", "steward-api", "--branch", "fix-crew-sync")
+    code, output = invoke("env", "resolve", "--repo", "steward-api", "--branch", "fix-crew-sync")
 
     assert code == 0
-    assert json.loads(output)["vent"] == "steward-fix-crew-sync"
+    assert json.loads(output)["environment"] == "steward-fix-crew-sync"
 
 
 def test_resolve_reads_a_custom_registry(tmp_path: Path) -> None:
@@ -63,7 +63,7 @@ def test_resolve_reads_a_custom_registry(tmp_path: Path) -> None:
     )
 
     code, output = invoke(
-        "vent",
+        "env",
         "resolve",
         "--repo",
         "magma-api",
@@ -80,7 +80,7 @@ def test_resolve_reads_a_custom_registry(tmp_path: Path) -> None:
 
 def test_up_dry_run_prints_helm_command() -> None:
     code, output = invoke(
-        "vent",
+        "env",
         "up",
         "--repo",
         "tremor-api",
@@ -95,13 +95,13 @@ def test_up_dry_run_prints_helm_command() -> None:
     )
 
     assert code == 0
-    assert output.startswith("helm upgrade --install vent-quake-alerts charts/vent")
+    assert output.startswith("helm upgrade --install preview-quake-alerts charts/vent")
     assert "services.steward.image.tag=sha-0f9e8d7" in output
 
 
 def test_offline_up_without_every_sha_fails_clearly() -> None:
     code, output = invoke(
-        "vent",
+        "env",
         "up",
         "--repo",
         "tremor-api",
@@ -119,7 +119,7 @@ def test_offline_up_without_every_sha_fails_clearly() -> None:
 
 def test_down_dry_run_cools_vent_when_no_branch_remains() -> None:
     code, output = invoke(
-        "vent",
+        "env",
         "down",
         "--repo",
         "tremor-api",
@@ -131,14 +131,15 @@ def test_down_dry_run_cools_vent_when_no_branch_remains() -> None:
 
     assert code == 0
     assert output.splitlines() == [
-        "helm uninstall vent-quake-alerts --namespace vent-quake-alerts --wait --ignore-not-found",
-        "kubectl delete namespace vent-quake-alerts --wait=true --ignore-not-found",
+        "helm uninstall preview-quake-alerts --namespace preview-quake-alerts --wait "
+        "--ignore-not-found",
+        "kubectl delete namespace preview-quake-alerts --wait=true --ignore-not-found",
     ]
 
 
 def test_down_dry_run_redeploys_on_main_when_another_repo_keeps_branch() -> None:
     code, output = invoke(
-        "vent",
+        "env",
         "down",
         "--repo",
         "steward-api",
@@ -160,10 +161,10 @@ def test_down_dry_run_redeploys_on_main_when_another_repo_keeps_branch() -> None
 
 
 def test_reset_dry_run() -> None:
-    code, output = invoke("vent", "reset", "--vent", "quake-alerts", "--dry-run")
+    code, output = invoke("env", "reset", "--name", "quake-alerts", "--dry-run")
 
     assert code == 0
-    assert "kubectl rollout restart deployment/postgres --namespace vent-quake-alerts" in output
+    assert "kubectl rollout restart deployment/postgres --namespace preview-quake-alerts" in output
 
 
 @pytest.mark.parametrize(
@@ -175,7 +176,7 @@ def test_reset_dry_run() -> None:
     ],
 )
 def test_invalid_input_exits_with_clear_error(args: tuple[str, ...], message: str) -> None:
-    code, output = invoke("vent", "resolve", "--repo", "tremor-api", "--offline", *args)
+    code, output = invoke("env", "resolve", "--repo", "tremor-api", "--offline", *args)
 
     assert code == 2
     assert message in output

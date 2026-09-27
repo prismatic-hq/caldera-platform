@@ -1,12 +1,12 @@
-from caldera_cli.commands import Target, down_commands, image_tag, reset_commands, up_commands
-from caldera_cli.registry import ServiceSpec
-from caldera_cli.resolver import Action, VentPlan
+from preview_cli.commands import Target, down_commands, image_tag, reset_commands, up_commands
+from preview_cli.registry import ServiceSpec
+from preview_cli.resolver import Action, PreviewPlan
 
 SERVICES = (
     ServiceSpec("tremor", "tremor-api", "tremor-api"),
     ServiceSpec("steward", "steward-api", "steward-api", 8080),
 )
-PLAN = VentPlan("quake-alerts", Action.UP, {"tremor": "feature/quake-alerts", "steward": "main"})
+PLAN = PreviewPlan("quake-alerts", Action.UP, {"tremor": "feature/quake-alerts", "steward": "main"})
 SHAS = {"tremor": "a1b2c3d4e5f6", "steward": "0f9e8d7c6b5a"}
 
 
@@ -18,13 +18,13 @@ def test_image_tag_uses_short_sha() -> None:
     assert image_tag("a1b2c3d4e5f6") == "sha-a1b2c3d"
 
 
-def test_up_runs_helm_upgrade_install_into_the_vent_namespace() -> None:
+def test_up_runs_helm_upgrade_install_into_the_environment_namespace() -> None:
     [command] = up_commands(PLAN, SERVICES, SHAS, "ds-42", Target(registry="123.dkr.ecr.aws"))
 
-    assert command[:5] == ["helm", "upgrade", "--install", "vent-quake-alerts", "charts/vent"]
+    assert command[:5] == ["helm", "upgrade", "--install", "preview-quake-alerts", "charts/vent"]
     assert "--create-namespace" in command
     assert "--wait" in command
-    assert command[command.index("--namespace") + 1] == "vent-quake-alerts"
+    assert command[command.index("--namespace") + 1] == "preview-quake-alerts"
     assert flag_values(command, "--set-string") == [
         "vent.name=quake-alerts",
         "datasetVersion=ds-42",
@@ -42,7 +42,7 @@ def test_up_runs_helm_upgrade_install_into_the_vent_namespace() -> None:
 
 def test_up_sets_values_for_every_registered_service() -> None:
     services = (*SERVICES, ServiceSpec("magma", "magma-api", "magma-api"))
-    plan = VentPlan("x", Action.UP, {"tremor": "main", "steward": "main", "magma": "feature/x"})
+    plan = PreviewPlan("x", Action.UP, {"tremor": "main", "steward": "main", "magma": "feature/x"})
 
     [command] = up_commands(plan, services, {**SHAS, "magma": "abcdef0"}, "ds", Target())
 
@@ -59,10 +59,10 @@ def test_down_uninstalls_release_then_deletes_namespace() -> None:
     commands = down_commands("quake-alerts", Target(context="kind-caldera"))
 
     assert [c[:3] for c in commands] == [
-        ["helm", "uninstall", "vent-quake-alerts"],
+        ["helm", "uninstall", "preview-quake-alerts"],
         ["kubectl", "delete", "namespace"],
     ]
-    assert commands[1][3] == "vent-quake-alerts"
+    assert commands[1][3] == "preview-quake-alerts"
     assert commands[1][-2:] == ["--context", "kind-caldera"]
 
 
@@ -71,4 +71,4 @@ def test_reset_restarts_postgres_and_waits() -> None:
 
     assert commands[0][:4] == ["kubectl", "rollout", "restart", "deployment/postgres"]
     assert commands[1][:4] == ["kubectl", "rollout", "status", "deployment/postgres"]
-    assert all("vent-quake-alerts" in command for command in commands)
+    assert all("preview-quake-alerts" in command for command in commands)

@@ -26,7 +26,7 @@ jobs:
   resolve:
     runs-on: ubuntu-latest
     outputs:
-      vent: ${{ steps.plan.outputs.vent }}
+      environment: ${{ steps.plan.outputs.environment }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -42,14 +42,14 @@ jobs:
           REPO: ${{ inputs.repo }}
           BRANCH: ${{ inputs.branch }}
         run: |
-          plan=$(uv run caldera vent resolve --repo "$REPO" --branch "$BRANCH" --offline)
-          echo "vent=$(jq -r .vent <<<"$plan")" >> "$GITHUB_OUTPUT"
+          plan=$(uv run preview env resolve --repo "$REPO" --branch "$BRANCH" --offline)
+          echo "environment=$(jq -r .environment <<<"$plan")" >> "$GITHUB_OUTPUT"
 
   down:
     needs: resolve
     runs-on: ubuntu-latest
     concurrency:
-      group: vent-${{ needs.resolve.outputs.vent }}
+      group: preview-${{ needs.resolve.outputs.environment }}
       cancel-in-progress: false
     env:
       GITHUB_TOKEN: ${{ secrets.CALDERA_TOKEN || github.token }}
@@ -66,4 +66,4 @@ jobs:
       - env:
           REPO: ${{ inputs.repo }}
           BRANCH: ${{ inputs.branch }}
-        run: uv run caldera vent down --repo "$REPO" --branch "$BRANCH" --dry-run
+        run: uv run preview env down --repo "$REPO" --branch "$BRANCH" --dry-run

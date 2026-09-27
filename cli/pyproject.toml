@@ -1,7 +1,7 @@
 [project]
-name = "caldera-cli"
+name = "preview-cli"
 version = "0.1.0"
-description = "caldera CLI: resolve feature groups and manage vents"
+description = "preview CLI: resolve feature groups and manage preview environments"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "httpx>=0.28",
@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [project.scripts]
-caldera = "caldera_cli.main:app"
+preview = "preview_cli.main:app"
 
 [build-system]
 requires = ["uv_build>=0.12,<0.13"]
