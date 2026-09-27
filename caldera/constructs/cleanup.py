@@ -34,36 +34,27 @@ def vpc_arn(scope: Construct, vpc: ec2.IVpc) -> str:
     return Stack.of(scope).format_arn(service="ec2", resource="vpc", resource_name=vpc.vpc_id)
 
 
-def vpc_access_statements(
-    scope: Construct,
-    vpc: ec2.IVpc,
-    subnets: list[ec2.ISubnet],
-    security_groups: list[ec2.ISecurityGroup],
-) -> list[iam.PolicyStatement]:
-    """Least-privilege replacement for AWSLambdaVPCAccessExecutionRole."""
-    stack = Stack.of(scope)
-    interfaces = stack.format_arn(service="ec2", resource="network-interface", resource_name="*")
-    placement = [
-        stack.format_arn(service="ec2", resource="subnet", resource_name=subnet.subnet_id)
-        for subnet in subnets
-    ] + [
-        stack.format_arn(
-            service="ec2", resource="security-group", resource_name=group.security_group_id
-        )
-        for group in security_groups
-    ]
+LAMBDA_VPC_DOCS = "https://docs.aws.amazon.com/lambda/latest/dg/configuration-vpc.html"
+LAMBDA_VPC_ACCESS_ACTIONS = [
+    "ec2:CreateNetworkInterface",
+    "ec2:DescribeNetworkInterfaces",
+    "ec2:DescribeSubnets",
+    "ec2:DeleteNetworkInterface",
+    "ec2:AssignPrivateIpAddresses",
+    "ec2:UnassignPrivateIpAddresses",
+]
+DENY_FUNCTION_CODE = {"Null": {"lambda:SourceFunctionArn": "false"}}
+
+
+def vpc_access_statements() -> list[iam.PolicyStatement]:
+    """Lambda requires these on all resources; function code is denied them. See LAMBDA_VPC_DOCS."""
     return [
-        iam.PolicyStatement(actions=["ec2:DescribeNetworkInterfaces"], resources=["*"]),
-        iam.PolicyStatement(actions=["ec2:CreateNetworkInterface"], resources=placement),
+        iam.PolicyStatement(actions=LAMBDA_VPC_ACCESS_ACTIONS, resources=["*"]),
         iam.PolicyStatement(
-            actions=[
-                "ec2:CreateNetworkInterface",
-                "ec2:DeleteNetworkInterface",
-                "ec2:AssignPrivateIpAddresses",
-                "ec2:UnassignPrivateIpAddresses",
-            ],
-            resources=[interfaces],
-            conditions={"ArnEquals": {"ec2:Vpc": vpc_arn(scope, vpc)}},
+            effect=iam.Effect.DENY,
+            actions=LAMBDA_VPC_ACCESS_ACTIONS,
+            resources=["*"],
+            conditions=DENY_FUNCTION_CODE,
         ),
     ]
 
@@ -142,9 +133,7 @@ class CleanupResource(Construct):
         ]
         network = props.network
         if network:
-            statements += vpc_access_statements(
-                self, network.vpc, network.subnets, [network.security_group]
-            )
+            statements += vpc_access_statements()
         self.role = iam.Role(
             self,
             "Role",
