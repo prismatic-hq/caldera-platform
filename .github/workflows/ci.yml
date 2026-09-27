@@ -64,13 +64,13 @@ jobs:
           fetch-depth: 0
       - run: >-
           docker run --rm -v "$PWD:/repo" -w /repo "$CT_IMAGE"
-          sh -c 'git config --global --add safe.directory "*" && ct lint --charts charts/preview-environment --target-branch main'
+          sh -c 'git config --global --add safe.directory "*" && ct lint --all --chart-dirs charts --target-branch main'
 
   chart-unittest:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/apps" "$HELM_UNITTEST_IMAGE" charts/preview-environment
+      - run: docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/apps" "$HELM_UNITTEST_IMAGE" charts/*
 
   manifests:
     runs-on: ubuntu-latest
@@ -79,13 +79,11 @@ jobs:
       - uses: azure/setup-helm@v5.0.1
         with:
           version: ${{ env.HELM_VERSION }}
-      - name: Render preview environment examples and platform manifests
-        run: |
-          mkdir -p rendered
-          for values in charts/preview-environment/ci/*-values.yaml; do
-            name=$(basename "$values" .yaml)
-            helm template "preview-$name" charts/preview-environment -n "preview-$name" -f "$values" > "rendered/$name.yaml"
-          done
-          cp platform/*.yaml rendered/
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Render chart examples and platform manifests
+        run: uv run python scripts/render_charts.py --out rendered
       - run: docker run --rm -v "$PWD/rendered:/r" "$KUBECONFORM_IMAGE" -strict -summary -ignore-missing-schemas /r
       - run: docker run --rm -v "$PWD/rendered:/r" "$TRIVY_IMAGE" config --exit-code 1 /r
