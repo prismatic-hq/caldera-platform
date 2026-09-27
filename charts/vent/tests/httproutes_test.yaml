@@ -4,7 +4,7 @@ values:
 templates:
   - templates/httproutes.yaml
 set:
-  vent.name: quake-alerts
+  environment.name: quake-alerts
   domain: preview.prismatic.dev
 tests:
   - it: renders one route per service
@@ -28,7 +28,7 @@ tests:
           value: preview
       - equal:
           path: metadata.labels["app.kubernetes.io/part-of"]
-          value: vent
+          value: preview-environment
   - it: uses one hostname label under the preview domain
     documentSelector:
       path: metadata.name

@@ -2,7 +2,7 @@ suite: network policies
 templates:
   - templates/networkpolicies.yaml
 set:
-  vent.name: quake-alerts
+  environment.name: quake-alerts
 tests:
   - it: denies all ingress and egress by default
     documentSelector:
@@ -37,7 +37,7 @@ tests:
   - it: lets only service and migration pods reach postgres
     documentSelector:
       path: metadata.name
-      value: postgres-from-vent-workloads
+      value: postgres-from-services
     asserts:
       - equal:
           path: spec.ingress[0].from[0].podSelector.matchExpressions[0].values

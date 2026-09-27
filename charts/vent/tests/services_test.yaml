@@ -4,7 +4,7 @@ values:
 templates:
   - templates/services.yaml
 set:
-  vent.name: quake-alerts
+  environment.name: quake-alerts
   services.tremor.image.tag: sha-a1b2c3d
   image.registry: registry.example
 tests:
@@ -12,7 +12,7 @@ tests:
     asserts:
       - hasDocuments:
           count: 4
-  - it: runs the pushed image with vent priority and part-of label
+  - it: runs the pushed image with preview-environment priority and part-of label
     documentIndex: 2
     asserts:
       - isKind:
@@ -25,18 +25,18 @@ tests:
           value: registry.example/tremor-api:sha-a1b2c3d
       - equal:
           path: spec.template.spec.priorityClassName
-          value: vent
+          value: preview-environment
       - equal:
           path: spec.template.metadata.labels["app.kubernetes.io/part-of"]
-          value: vent
+          value: preview-environment
       - equal:
           path: spec.template.spec.containers[0].readinessProbe.periodSeconds
           value: 2
-  - it: labels every object as part of the vent
+  - it: labels every object as part of the preview environment
     asserts:
       - equal:
           path: metadata.labels["app.kubernetes.io/part-of"]
-          value: vent
+          value: preview-environment
   - it: renders every service in the values, not a fixed list
     set:
       services.magma.image.repository: magma-api

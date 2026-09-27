@@ -26,7 +26,7 @@ def test_up_runs_helm_upgrade_install_into_the_environment_namespace() -> None:
     assert "--wait" in command
     assert command[command.index("--namespace") + 1] == "preview-quake-alerts"
     assert flag_values(command, "--set-string") == [
-        "vent.name=quake-alerts",
+        "environment.name=quake-alerts",
         "datasetVersion=ds-42",
         "services.tremor.image.repository=tremor-api",
         "services.tremor.image.tag=sha-a1b2c3d",

@@ -112,7 +112,7 @@ def _existing_environments(target: Target, dry_run: bool) -> frozenset[str]:
         "get",
         "namespaces",
         "-l",
-        "app.kubernetes.io/part-of=vent",
+        "app.kubernetes.io/part-of=preview-environment",
         "-o",
         "jsonpath={.items[*].metadata.name}",
     ]

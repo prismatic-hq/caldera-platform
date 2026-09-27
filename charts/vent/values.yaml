@@ -1,9 +1,9 @@
-vent:
+environment:
   name: ""
 
 datasetVersion: latest
 domain: preview.example.com
-priorityClassName: vent
+priorityClassName: preview-environment
 
 gateway:
   name: preview

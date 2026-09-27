@@ -1,4 +1,4 @@
-vent:
+environment:
   name: quake-alerts
 datasetVersion: ds-0123abcd
 domain: preview.prismatic.dev
