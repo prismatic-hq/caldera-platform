@@ -14,13 +14,12 @@
     "time",
     "datacontenttype",
     "dataschema",
-    "environment",
-    "traceparent",
-    "correlationid",
     "data"
   ],
   "properties": {
-    "specversion": { "const": "1.0" },
+    "specversion": {
+      "const": "1.0"
+    },
     "id": {
       "type": "string",
       "minLength": 1,
@@ -29,36 +28,38 @@
     "source": {
       "type": "string",
       "pattern": "^//prismatic-hq(/[a-z0-9][a-z0-9-]*)+$",
-      "examples": ["//prismatic-hq/tremor-api/ci", "//prismatic-hq/caldera/golden-seeder"]
+      "examples": [
+        "//prismatic-hq/caldera/cli",
+        "//prismatic-hq/caldera/golden-image"
+      ]
     },
     "type": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+\\.[a-z][a-z0-9]*\\.[a-z][a-z0-9]*\\.[a-z][a-z0-9-]*\\.v[1-9][0-9]*$",
       "description": "<reverse-domain>.<domain>.<entity>.<action>.v<N>; the suffix must be registered in registry.v1.yaml.",
-      "examples": ["com.prismatichq.vent.environment.ready.v1"]
+      "examples": [
+        "com.prismatichq.vent.environment.ready.v1"
+      ]
     },
     "subject": {
       "type": "string",
-      "pattern": "^(vent|service|snapshot|stage)/[a-z0-9][a-z0-9._-]*$|^(application|rollout|analysisrun)/[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9._-]*$"
+      "pattern": "^(vent|dataset)/[a-z0-9][a-z0-9._-]*$"
     },
-    "time": { "type": "string", "format": "date-time" },
-    "datacontenttype": { "const": "application/json" },
+    "time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "datacontenttype": {
+      "const": "application/json"
+    },
     "dataschema": {
       "type": "string",
       "format": "uri",
       "pattern": "^https://",
       "description": "URL of the data schema at a pinned caldera-platform ref."
     },
-    "environment": {
-      "type": "string",
-      "pattern": "^(dev|staging|prod|tenant-[a-z0-9-]+|vent-[a-z0-9-]+)$"
-    },
-    "traceparent": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"
-    },
-    "tracestate": { "type": "string" },
-    "correlationid": { "type": "string", "minLength": 1 },
-    "data": { "type": "object" }
+    "data": {
+      "type": "object"
+    }
   }
 }
