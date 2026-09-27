@@ -96,5 +96,5 @@ description = "Fail if AWS resources from the platform remain after cdk destroy"
 run = "uv run python scripts/verify_clean.py"
 
 [tasks."secrets:github"]
-description = "Write the GitHub App secrets and AWS_REGION variable to every platform and service repo"
+description = "Copy the GitHub App from 1Password and AWS_REGION to every repo, e.g. -- --region us-east-2"
 run = "uv run python -m scripts.put_github_secrets"
