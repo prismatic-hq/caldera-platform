@@ -131,3 +131,9 @@ def test_preview_jobs_install_only_the_cli(workflow: str) -> None:
 
         assert runs == ["uv sync --locked --package preview-cli --no-dev"], f"{workflow}:{name}"
         assert job["env"]["UV_NO_SYNC"] == "1", f"{workflow}:{name}"
+
+
+def test_ci_runs_once_per_pull_request_commit() -> None:
+    triggers = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())[True]
+    assert triggers["push"] == {"branches": ["main"]}
+    assert "pull_request" in triggers
