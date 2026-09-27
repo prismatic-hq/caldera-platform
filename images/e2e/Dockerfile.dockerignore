@@ -1,0 +1,8 @@
+**
+!pyproject.toml
+!uv.lock
+!cli/pyproject.toml
+!seeder/pyproject.toml
+!e2e/
+e2e/.pytest_cache
+e2e/**/__pycache__
