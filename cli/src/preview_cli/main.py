@@ -315,9 +315,16 @@ def _deploy(
         {
             "environment": plan.environment,
             "exact-image": str(exact).lower(),
+            "url": _primary_url(summary["urls"], pushed),
             "result": json.dumps(summary, sort_keys=True),
         },
     )
+
+
+def _primary_url(urls: dict[str, str], pushed: str | None) -> str:
+    if pushed in urls:
+        return urls[pushed]
+    return next(iter(urls.values()), "")
 
 
 def _summary(
@@ -437,6 +444,7 @@ def down(
             sharing = _or_exit(_sharing, services, deleted, branch, branch_in or [], offline)
             plan = _or_exit(resolve_delete, services.names, deleted, branch, sharing)
         stopwatch.environment = plan.environment
+        _write_outputs(github_output, {"environment": plan.environment, "action": plan.action})
         if plan.action is Action.DOWN:
             with stopwatch.stage("teardown"):
                 _run(down_commands(plan.environment, target), dry_run)

@@ -24,6 +24,9 @@ on:
 
 permissions:
   contents: read
+  checks: write
+  deployments: write
+  pull-requests: write
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
@@ -59,8 +62,12 @@ jobs:
     concurrency:
       group: preview-${{ needs.resolve.outputs.environment }}
       cancel-in-progress: true
+    environment:
+      name: preview-${{ needs.resolve.outputs.environment }}
+      url: ${{ steps.deploy.outputs.url }}
     env:
       GITHUB_TOKEN: ${{ secrets.CALDERA_TOKEN || github.token }}
+      ENVIRONMENT: ${{ needs.resolve.outputs.environment }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -74,8 +81,31 @@ jobs:
         with:
           version: ${{ env.HELM_VERSION }}
       - run: uv sync --locked
-      - env:
+      - id: deploy
+        env:
           REPO: ${{ inputs.repo }}
           BRANCH: ${{ inputs.branch }}
           SHA: ${{ inputs.sha }}
         run: uv run preview env up --repo "$REPO" --branch "$BRANCH" --sha "$SHA"
+      - id: e2e
+        if: steps.deploy.outputs.exact-image == 'true'
+        continue-on-error: true
+        run: uv run preview env test --name "$ENVIRONMENT"
+      - name: Report e2e check, URLs and timings
+        if: always() && steps.deploy.outcome == 'success'
+        uses: actions/github-script@v9.0.0
+        env:
+          RESULT: ${{ steps.deploy.outputs.result }}
+          DEPLOY_TIMINGS: ${{ steps.deploy.outputs.timings }}
+          E2E_TIMINGS: ${{ steps.e2e.outputs.timings }}
+          E2E_OUTCOME: ${{ steps.e2e.outcome }}
+          EXACT_IMAGE: ${{ steps.deploy.outputs.exact-image }}
+          SHA: ${{ inputs.sha }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const { report } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/preview-report.cjs`);
+            await report({ github, context });
+      - name: Fail the job when e2e failed
+        if: steps.e2e.outcome == 'failure'
+        run: exit 1

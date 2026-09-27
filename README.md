@@ -42,6 +42,7 @@ task init && task test
 | `task destroy` | Destroy every stack, then `task verify:clean` |
 | `task local:up` / `task local:down` | kind cluster with Cilium, KEDA and `platform/` |
 | `uv run preview env up ... --dry-run` | Print the Helm command for a preview environment |
+| `uv run preview env test --name <env>` | Run the E2E Helm test hook; CI reports it as the `e2e` check |
 
 ## Deploy
 
