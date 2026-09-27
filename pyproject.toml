@@ -10,6 +10,7 @@ dependencies = [
     "caldera-cli",
     "constructs>=10.5.0,<11.0.0",
     "golden-seeder",
+    "boto3>=1.43",
 ]
 
 [dependency-groups]
