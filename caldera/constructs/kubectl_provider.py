@@ -1,4 +1,3 @@
-from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_eks_v2 as eks
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
@@ -13,9 +12,7 @@ from caldera.constructs.cleanup import (
 ECR_PUBLIC_LOGIN = ["ecr-public:GetAuthorizationToken", "sts:GetServiceBearerToken"]
 
 
-def _harden(
-    function: lambda_.Function, vpc: ec2.IVpc, log_name: str, extra: list[iam.PolicyStatement]
-) -> None:
+def _harden(function: lambda_.Function, log_name: str, extra: list[iam.PolicyStatement]) -> None:
     """Swap AWS managed policies for inline least-privilege ones and own the log group."""
     log_group = owned_log_group(function, "Logs", log_name)
     cfn_function = function.node.default_child
@@ -29,9 +26,7 @@ def _harden(
     cfn_role.managed_policy_arns = None
     statements = [
         log_statement(log_group),
-        *vpc_access_statements(
-            function, vpc, vpc.private_subnets, function.connections.security_groups
-        ),
+        *vpc_access_statements(),
         *extra,
     ]
     policy = iam.Policy(function, "LeastPrivilege", statements=statements)
@@ -39,7 +34,7 @@ def _harden(
     cfn_function.node.add_dependency(policy)
 
 
-def harden_kubectl_provider(cluster: eks.Cluster, vpc: ec2.IVpc, cluster_name: str) -> None:
+def harden_kubectl_provider(cluster: eks.Cluster, cluster_name: str) -> None:
     """The eks_v2 kubectl provider ships AWS managed policies and an older Python runtime."""
     provider = cluster.node.find_child("KubectlProvider")
     handler = provider.node.find_child("Handler")
@@ -53,8 +48,7 @@ def harden_kubectl_provider(cluster: eks.Cluster, vpc: ec2.IVpc, cluster_name: s
     handler.node.try_remove_child("HasEcrPublic")
     _harden(
         handler,
-        vpc,
         f"/aws/lambda/{cluster_name}-kubectl-handler",
         [iam.PolicyStatement(actions=ECR_PUBLIC_LOGIN, resources=["*"])],
     )
-    _harden(on_event, vpc, f"/aws/lambda/{cluster_name}-kubectl-provider", [])
+    _harden(on_event, f"/aws/lambda/{cluster_name}-kubectl-provider", [])

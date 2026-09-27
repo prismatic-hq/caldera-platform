@@ -33,6 +33,15 @@ ACTIONS_WITHOUT_RESOURCE_LEVEL_PERMISSIONS = (
     "route53:ListHostedZonesByName",
     "sts:GetServiceBearerToken",
 )
+LAMBDA_VPC_ACCESS_ACTIONS = {
+    "ec2:CreateNetworkInterface",
+    "ec2:DescribeNetworkInterfaces",
+    "ec2:DescribeSubnets",
+    "ec2:DeleteNetworkInterface",
+    "ec2:AssignPrivateIpAddresses",
+    "ec2:UnassignPrivateIpAddresses",
+}
+DENY_FUNCTION_CODE = {"Null": {"lambda:SourceFunctionArn": "false"}}
 SCOPED_WILDCARD = re.compile(
     r"^Resource::(arn:(<AWS::Partition>|aws[a-z-]*):[a-z0-9-]+:"
     r"(<AWS::Region>|[a-z]{2}(-[a-z]+)+-\d)?:(<AWS::AccountId>|\d{12})?"
@@ -45,16 +54,35 @@ def _as_list(value: object) -> list:
     return value if isinstance(value, list) else [value]
 
 
-def _wildcard_resource_actions(resource: dict) -> list[str]:
+def _statements(resource: dict) -> list[dict]:
     properties = resource.get("Properties", {})
     documents = [properties.get("PolicyDocument", {})]
     documents += [policy.get("PolicyDocument", {}) for policy in properties.get("Policies", [])]
+    return [statement for document in documents for statement in document.get("Statement", [])]
+
+
+def _denies_lambda_vpc_access_to_function_code(statements: list[dict]) -> bool:
+    return any(
+        statement.get("Effect") == "Deny"
+        and set(_as_list(statement.get("Action", []))) >= LAMBDA_VPC_ACCESS_ACTIONS
+        and statement.get("Condition") == DENY_FUNCTION_CODE
+        for statement in statements
+    )
+
+
+def _wildcard_resource_actions(resource: dict) -> list[str]:
+    statements = _statements(resource)
+    exempt = (
+        LAMBDA_VPC_ACCESS_ACTIONS
+        if _denies_lambda_vpc_access_to_function_code(statements)
+        else set()
+    )
     return [
         action
-        for document in documents
-        for statement in document.get("Statement", [])
-        if "*" in _as_list(statement.get("Resource", []))
+        for statement in statements
+        if statement.get("Effect") == "Allow" and "*" in _as_list(statement.get("Resource", []))
         for action in _as_list(statement.get("Action", []))
+        if action not in exempt
     ]
 
 
@@ -127,6 +155,19 @@ def _policy(*actions: str, resource: str = "*") -> dict:
     return {"Statement": [{"Effect": "Allow", "Action": list(actions), "Resource": resource}]}
 
 
+def _lambda_vpc_policy(*, deny: dict | None) -> dict:
+    allow = _policy(*sorted(LAMBDA_VPC_ACCESS_ACTIONS))["Statement"]
+    guard = [
+        {
+            "Effect": "Deny",
+            "Action": sorted(LAMBDA_VPC_ACCESS_ACTIONS),
+            "Resource": "*",
+            "Condition": deny,
+        }
+    ]
+    return {"Statement": allow + (guard if deny else [])}
+
+
 CLUSTER_ROLE = "CalderaCluster/ClusterRole/Resource"
 EKS_CLUSTER_POLICY = (
     "AwsSolutions-IAM4[Policy::arn:<AWS::Partition>:iam::aws:policy/AmazonEKSClusterPolicy]"
@@ -181,6 +222,38 @@ POLICY_PATH = "CalderaAddons/Policy/Resource"
             ),
             1,
             id="IAM5 Resource::* covering a scopable action",
+        ),
+        pytest.param(
+            _resource(
+                "AWS::IAM::Policy",
+                POLICY_PATH,
+                ["AwsSolutions-IAM5[Resource::*]"],
+                PolicyDocument=_lambda_vpc_policy(deny=DENY_FUNCTION_CODE),
+            ),
+            0,
+            id="IAM5 Resource::* on Lambda VPC access denied to function code",
+        ),
+        pytest.param(
+            _resource(
+                "AWS::IAM::Policy",
+                POLICY_PATH,
+                ["AwsSolutions-IAM5[Resource::*]"],
+                PolicyDocument=_lambda_vpc_policy(deny=None),
+            ),
+            4,
+            id="IAM5 Resource::* on Lambda VPC access usable by function code",
+        ),
+        pytest.param(
+            _resource(
+                "AWS::IAM::Policy",
+                POLICY_PATH,
+                ["AwsSolutions-IAM5[Resource::*]"],
+                PolicyDocument=_lambda_vpc_policy(
+                    deny={"ArnEquals": {"lambda:SourceFunctionArn": "arn:aws:lambda:::function:x"}}
+                ),
+            ),
+            4,
+            id="IAM5 Resource::* on Lambda VPC access with a narrower deny",
         ),
         pytest.param(
             _resource(

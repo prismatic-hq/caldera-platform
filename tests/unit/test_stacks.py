@@ -451,3 +451,53 @@ def test_vpc_lambdas_are_created_after_their_network_interface_permissions(templ
                 and grants_network_interfaces(policy["Properties"]["PolicyDocument"])
                 for policy_id, policy in policies.items()
             ), f"{name}/{logical_id}"
+
+
+LAMBDA_VPC_ACCESS_ACTIONS = [
+    "ec2:CreateNetworkInterface",
+    "ec2:DescribeNetworkInterfaces",
+    "ec2:DescribeSubnets",
+    "ec2:DeleteNetworkInterface",
+    "ec2:AssignPrivateIpAddresses",
+    "ec2:UnassignPrivateIpAddresses",
+]
+
+
+def role_statements(template: Template, role_id: str) -> list[dict]:
+    inline = resources(template, "AWS::IAM::Role")[role_id]["Properties"].get("Policies", [])
+    attached = [
+        policy["Properties"]
+        for policy in resources(template, "AWS::IAM::Policy").values()
+        if {"Ref": role_id} in policy["Properties"]["Roles"]
+    ]
+    return [
+        statement
+        for policy in inline + attached
+        for statement in policy["PolicyDocument"]["Statement"]
+    ]
+
+
+def covers_lambda_vpc_access(statement: dict, effect: str, condition: dict | None) -> bool:
+    return (
+        statement["Effect"] == effect
+        and statement["Resource"] == "*"
+        and statement.get("Condition") == condition
+        and set(LAMBDA_VPC_ACCESS_ACTIONS) <= set(statement["Action"])
+    )
+
+
+def test_vpc_lambdas_get_the_access_lambda_requires_but_their_code_does_not(templates) -> None:
+    vpc_functions = [
+        (f"{name}/{logical_id}", template, function["Properties"]["Role"]["Fn::GetAtt"][0])
+        for name, template in templates.items()
+        for logical_id, function in resources(template, "AWS::Lambda::Function").items()
+        if "VpcConfig" in function["Properties"]
+    ]
+    assert vpc_functions
+    for function, template, role_id in vpc_functions:
+        statements = role_statements(template, role_id)
+        assert any(covers_lambda_vpc_access(s, "Allow", None) for s in statements), function
+        assert any(
+            covers_lambda_vpc_access(s, "Deny", {"Null": {"lambda:SourceFunctionArn": "false"}})
+            for s in statements
+        ), function

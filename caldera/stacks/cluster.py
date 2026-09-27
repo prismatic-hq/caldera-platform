@@ -97,7 +97,7 @@ class ClusterStack(Stack):
             removal_policy=RemovalPolicy.DESTROY,
         )
         self.cluster.node.add_dependency(control_plane_logs)
-        harden_kubectl_provider(self.cluster, self.vpc, name)
+        harden_kubectl_provider(self.cluster, name)
 
         self.cilium = self._cilium()
         self.system_nodes = self._system_nodes()

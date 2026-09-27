@@ -1,8 +1,10 @@
 """Every cdk-nag suppression in the app. Policy: REQUIREMENTS.md Section 4c.
 
-Two explicit categories plus one derived from the policy documents themselves:
+Two explicit categories plus two derived from the policy documents themselves:
 - IAM4 on the EKS cluster and node roles, for the managed policies EKS requires.
 - IAM5 ``Resource::*`` on statements whose actions have no resource-level permissions.
+- IAM5 ``Resource::*`` on the EC2 actions Lambda requires for VPC access, when the same
+  policy denies them to function code.
 - IAM5 on an ARN scoped to one resource type in this account and region, for resources
   controllers create at runtime (their IDs cannot be known at synth time).
 """
@@ -14,6 +16,12 @@ from fnmatch import fnmatch
 from aws_cdk import Acknowledgment, CfnResource, Stack, Validations
 from aws_cdk import aws_iam as iam
 from constructs import IConstruct
+
+from caldera.constructs.cleanup import (
+    DENY_FUNCTION_CODE,
+    LAMBDA_VPC_ACCESS_ACTIONS,
+    LAMBDA_VPC_DOCS,
+)
 
 EKS_DOCS = "https://docs.aws.amazon.com/eks/latest/userguide"
 SAR_DOCS = "https://docs.aws.amazon.com/service-authorization/latest/reference/reference_policies_actions-resources-contextkeys.html"
@@ -98,13 +106,26 @@ def is_scoped_wildcard(resource: str) -> bool:
     return bool(SCOPED_WILDCARD_ARN.match(resource) or FUNCTION_QUALIFIER_WILDCARD.match(resource))
 
 
+def _statements(documents: list[dict]) -> list[dict]:
+    return [statement for document in documents for statement in document.get("Statement", [])]
+
+
+def denies_lambda_vpc_access_to_function_code(documents: list[dict]) -> bool:
+    return any(
+        statement.get("Effect") == "Deny"
+        and set(LAMBDA_VPC_ACCESS_ACTIONS) <= set(_as_list(statement.get("Action", [])))
+        and statement.get("Condition") == DENY_FUNCTION_CODE
+        for statement in _statements(documents)
+    )
+
+
 def allowed_iam5_findings(documents: list[dict]) -> set[str]:
-    statements = [
-        statement
-        for document in documents
-        for statement in document.get("Statement", [])
-        if statement.get("Effect") == "Allow"
-    ]
+    statements = [s for s in _statements(documents) if s.get("Effect") == "Allow"]
+    exempt = (
+        set(LAMBDA_VPC_ACCESS_ACTIONS)
+        if denies_lambda_vpc_access_to_function_code(documents)
+        else set()
+    )
     findings: set[str] = set()
     wildcard_actions = [
         action
@@ -112,7 +133,9 @@ def allowed_iam5_findings(documents: list[dict]) -> set[str]:
         if "*" in map(flatten, _as_list(statement.get("Resource", [])))
         for action in _as_list(statement.get("Action", []))
     ]
-    if wildcard_actions and all(map(is_allowlisted_action, wildcard_actions)):
+    if wildcard_actions and all(
+        is_allowlisted_action(action) or action in exempt for action in wildcard_actions
+    ):
         findings.add("Resource::*")
     for statement in statements:
         for resource in map(flatten, _as_list(statement.get("Resource", []))):
@@ -134,21 +157,31 @@ def _policy_documents(resource: CfnResource) -> list[dict]:
     return []
 
 
+def _iam5_reason(finding: str, documents: list[dict]) -> str:
+    if finding == "Resource::*" and denies_lambda_vpc_access_to_function_code(documents):
+        return (
+            "Lambda requires its VPC access actions on all resources; function code is denied "
+            f"them, and other actions here have no resource-level permissions: {LAMBDA_VPC_DOCS}"
+        )
+    if finding.startswith(("Resource::*", "Action::")):
+        return f"No resource-level permissions for these actions: {SAR_DOCS}"
+    return (
+        "Scoped to one resource type in this account and region; the IDs are "
+        "created at runtime by the controller"
+    )
+
+
 def iam5_suppressions(root: IConstruct) -> list[Suppression]:
     return [
         Suppression(
             path=construct.node.path,
             finding_id=f"AwsSolutions-IAM5[{finding}]",
-            reason=(
-                f"No resource-level permissions for these actions: {SAR_DOCS}"
-                if finding.startswith(("Resource::*", "Action::"))
-                else "Scoped to one resource type in this account and region; the IDs are "
-                "created at runtime by the controller"
-            ),
+            reason=_iam5_reason(finding, documents),
         )
         for construct in root.node.find_all()
         if isinstance(construct, CfnResource)
-        for finding in sorted(allowed_iam5_findings(_policy_documents(construct)))
+        for documents in [_policy_documents(construct)]
+        for finding in sorted(allowed_iam5_findings(documents))
     ]
 
 
