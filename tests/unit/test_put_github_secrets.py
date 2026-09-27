@@ -3,12 +3,11 @@ from pathlib import Path
 
 import pytest
 
+from scripts.onepassword import OpError
 from scripts.put_github_secrets import (
     GitHubSetting,
-    OpError,
     main,
     put_github_settings,
-    read_op,
     settings_for,
 )
 
@@ -196,22 +195,3 @@ def test_1password_errors_are_actionable(monkeypatch, capsys) -> None:
 
     assert main(["--region", "us-east-2"]) == 2
     assert "op signin" in capsys.readouterr().err
-
-
-def test_read_op_explains_a_missing_cli(monkeypatch) -> None:
-    def no_op(*args, **kwargs):
-        raise FileNotFoundError("op")
-
-    monkeypatch.setattr("scripts.put_github_secrets.subprocess.run", no_op)
-    with pytest.raises(OpError, match="mise install"):
-        read_op(f"{ITEM}/pem")
-
-
-def test_read_op_explains_a_failed_read(monkeypatch) -> None:
-    def failed(*args, **kwargs):
-        raise subprocess.CalledProcessError(1, ["op"], stderr="[ERROR] not currently signed in\n")
-
-    monkeypatch.setattr("scripts.put_github_secrets.subprocess.run", failed)
-    with pytest.raises(OpError, match="op signin") as raised:
-        read_op(f"{ITEM}/pem")
-    assert "Integrate with 1Password CLI" in str(raised.value)

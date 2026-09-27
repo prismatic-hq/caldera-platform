@@ -39,15 +39,17 @@ once. Its credentials go to SSM Parameter Store, and External Secrets syncs them
 
 ## Store the credentials
 
-Run this after every fresh deploy. The network sweeper deletes `/prismatic/` on destroy.
+Keep the app in 1Password first (next section). Run this after every fresh deploy. The network
+sweeper deletes `/prismatic/` on destroy.
 
 ```sh
-mise run secrets:put -- --app-id <app-id> --installation-id <installation-id> \
-  --private-key-file ~/Downloads/<app-name>.<date>.private-key.pem
+mise run secrets:put
 ```
 
-After the command succeeds, delete the `.pem` or move it to a password manager. Never paste the
-key into chat, tickets or commits.
+It reads `app_id`, `installation_id` and `pem` with `op read` and writes them to SSM as
+`SecureString` parameters. `--op-vault` and `--op-item` select another item; `--app-id`,
+`--installation-id` and `--private-key-file` bypass 1Password. Never paste the key into chat,
+tickets or commits.
 
 ## Keep the app in 1Password
 
@@ -84,6 +86,6 @@ Each job mints a one-hour, contents-read installation token with
 ## Rotate the key
 
 1. Generate a new private key on the app page.
-2. Replace the `pem` file on the 1Password item, then run `mise run secrets:put` with the new
-   `.pem` and `mise run secrets:github -- --region us-east-2`.
+2. Replace the `pem` file on the 1Password item, then run `mise run secrets:put` and
+   `mise run secrets:github -- --region us-east-2`.
 3. Delete the old key on the app page.
