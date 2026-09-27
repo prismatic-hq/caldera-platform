@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  AWS_REGION: ${{ vars.AWS_REGION }}
   POSTGRES_IMAGE: postgres:17.11-alpine3.24
   PLATFORMS: linux/amd64,linux/arm64
   REPOSITORY: golden-db
@@ -33,6 +33,20 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      - id: config
+        name: Check workflow configuration
+        env:
+          CLIENT_ID: ${{ secrets.CALDERA_APP_CLIENT_ID }}
+          PRIVATE_KEY: ${{ secrets.CALDERA_APP_PRIVATE_KEY }}
+        run: |
+          missing=()
+          [ -n "$AWS_REGION" ] || missing+=("variable AWS_REGION")
+          [ -n "$CLIENT_ID" ] || missing+=("secret CALDERA_APP_CLIENT_ID")
+          [ -n "$PRIVATE_KEY" ] || missing+=("secret CALDERA_APP_PRIVATE_KEY")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::$GITHUB_REPOSITORY is missing: ${missing[*]}. Set them at repository level; private repos on GitHub Free cannot read organization secrets or variables."
+            exit 1
+          fi
       - id: app-token
         uses: actions/create-github-app-token@v3.2.0
         with:

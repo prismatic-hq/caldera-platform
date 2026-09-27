@@ -47,3 +47,22 @@ def test_cross_repo_checkouts_use_a_github_app_installation_token(workflow: str)
                 assert token_steps and token_steps[0] < i, f"{workflow}:{name}"
                 assert step["with"]["token"] == "${{ steps.app-token.outputs.token }}"
     assert "CALDERA_TOKEN" not in (WORKFLOWS / workflow).read_text()
+
+
+@pytest.mark.parametrize("workflow", (*PREVIEW_WORKFLOWS, "golden-image.yml"))
+def test_region_has_no_silent_default(workflow: str) -> None:
+    text = (WORKFLOWS / workflow).read_text()
+    assert "AWS_REGION: ${{ vars.AWS_REGION }}" in text
+    assert "us-east-1" not in text
+
+
+@pytest.mark.parametrize("workflow", (*PREVIEW_WORKFLOWS, "golden-image.yml"))
+def test_jobs_check_their_configuration_before_minting_a_token(workflow: str) -> None:
+    for name, job in jobs(workflow).items():
+        steps = job["steps"]
+        token = next(i for i, step in enumerate(steps) if step.get("id") == "app-token")
+        checks = [i for i, step in enumerate(steps) if step.get("id") == "config"]
+        assert checks and checks[0] < token, f"{workflow}:{name}"
+        env = steps[checks[0]]["env"]
+        assert env["CLIENT_ID"] == "${{ secrets.CALDERA_APP_CLIENT_ID }}"
+        assert env["PRIVATE_KEY"] == "${{ secrets.CALDERA_APP_PRIVATE_KEY }}"
