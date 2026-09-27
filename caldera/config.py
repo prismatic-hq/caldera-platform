@@ -1,3 +1,6 @@
+import os
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,6 +13,12 @@ SERVICES_FILE = REPO_ROOT / "services.yaml"
 SSM_PREFIX = "/prismatic/"
 PLATFORM_TAG = "prismatic:platform"
 GITHUB_APP_KEYS = ("github_app_id", "github_app_installation_id", "github_app_private_key")
+ENV_PREFIX = "CALDERA_"
+
+
+def env_name(context_key: str) -> str:
+    """`previewAllowlistCidrs` -> `CALDERA_PREVIEW_ALLOWLIST_CIDRS`."""
+    return ENV_PREFIX + re.sub(r"(?<!^)(?=[A-Z])", "_", context_key).upper()
 
 
 def github_app_parameter(key: str) -> str:
@@ -39,15 +48,24 @@ class PlatformConfig:
     registry: ServiceRegistry
 
     @classmethod
-    def from_context(cls, node: Node) -> "PlatformConfig":
+    def from_context(cls, node: Node, environ: Mapping[str, str] = os.environ) -> "PlatformConfig":
+        """Read each setting from CDK context (`-c key=value`), then `CALDERA_<KEY>`."""
+
         def context(key: str, default: object) -> object:
             value = node.try_get_context(key)
+            if value is None:
+                value = environ.get(env_name(key))
             return default if value is None else value
 
         nat_gateways = int(context("natGateways", 1))
         if nat_gateways not in (1, 2):
             raise ValueError(f"natGateways must be 1 or 2, got {nat_gateways}")
-        domain = str(context("domain", "prismatic.dev"))
+        domain = str(context("domain", ""))
+        if not domain:
+            raise ValueError(
+                "domain is not set: add CALDERA_DOMAIN to .env (see .env.example) "
+                "or pass -c domain=<zone>"
+            )
         return cls(
             cluster_name=str(context("clusterName", "caldera")),
             domain=domain,

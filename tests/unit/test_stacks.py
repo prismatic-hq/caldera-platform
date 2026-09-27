@@ -218,7 +218,7 @@ def test_registry_repositories_are_immutable_and_emptied_on_delete(templates) ->
 def test_dns_zone_is_swept_before_deletion(templates) -> None:
     dns = templates["Dns"]
 
-    dns.has_resource_properties("AWS::Route53::HostedZone", {"Name": "prismatic.dev."})
+    dns.has_resource_properties("AWS::Route53::HostedZone", {"Name": "example.com."})
     dns.resource_count_is("Custom::ZoneSweeper", 1)
 
 
@@ -335,8 +335,8 @@ def test_external_dns_may_only_change_the_wildcard_records(templates) -> None:
     assert conditions == {
         "ForAllValues:StringLike": {
             "route53:ChangeResourceRecordSetsNormalizedRecordNames": [
-                "*preview.prismatic.dev",
-                "*dev.prismatic.dev",
+                "*preview.example.com",
+                "*dev.example.com",
             ]
         },
         "ForAllValues:StringEquals": {
@@ -383,7 +383,7 @@ def test_budget_always_notifies(templates) -> None:
         "FORECASTED",
     }
     assert notifications[0]["Subscribers"] == [
-        {"Address": "platform@prismatic.dev", "SubscriptionType": "EMAIL"}
+        {"Address": "platform@example.com", "SubscriptionType": "EMAIL"}
     ]
 
 

@@ -37,7 +37,7 @@ task init && task test
 | `task test` | pytest, helm unittest, ct lint, kubeconform, trivy config |
 | `task synth` | `cdk synth` with cdk-nag `AwsSolutionsChecks` |
 | `task bootstrap` | One-time `cdk bootstrap` of the account and region |
-| `task deploy -- -c domain=<domain>` | Deploy every stack |
+| `task deploy` | Deploy every stack with settings from `.env` |
 | `task secrets:put -- --app-id ... --installation-id ... --private-key-file app.pem` | GitHub App credentials to SSM for the runners |
 | `task destroy` | Destroy every stack, then `task verify:clean` |
 | `task local:up` / `task local:down` | kind cluster with Cilium, KEDA and `platform/` |
@@ -45,6 +45,6 @@ task init && task test
 
 ## Deploy
 
-`task bootstrap`, then `task deploy -- -c domain=<domain>` and `task secrets:put`, then point
-the domain's NS records at the new hosted zone. Other context: `natGateways` (1 or 2),
-`budgetEmail` and `acmeEmail` (default `platform@<domain>`), `previewAllowlistCidrs` (`a,b`).
+`cp .env.example .env` and set `CALDERA_DOMAIN`, then `task bootstrap`, `task deploy` and
+`task secrets:put`, then point the domain's NS records at the new hosted zone. Every setting in
+`.env.example` is also a context key (`-c budgetEmail=...`), which overrides `.env`.
