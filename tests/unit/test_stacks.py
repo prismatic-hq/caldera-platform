@@ -57,6 +57,144 @@ def test_private_subnets_are_tagged_for_karpenter_discovery(templates) -> None:
     )
 
 
+def test_cluster_is_private_without_default_networking_addons(templates) -> None:
+    templates["Cluster"].has_resource_properties(
+        "AWS::EKS::Cluster",
+        {
+            "BootstrapSelfManagedAddons": False,
+            "ResourcesVpcConfig": Match.object_like(
+                {"EndpointPublicAccess": False, "EndpointPrivateAccess": True}
+            ),
+            "Logging": {
+                "ClusterLogging": {
+                    "EnabledTypes": [
+                        {"Type": kind}
+                        for kind in (
+                            "api",
+                            "audit",
+                            "authenticator",
+                            "controllerManager",
+                            "scheduler",
+                        )
+                    ]
+                }
+            },
+        },
+    )
+
+
+def test_cluster_installs_only_pod_identity_and_coredns_addons(templates) -> None:
+    addons = resources(templates["Cluster"], "AWS::EKS::Addon")
+
+    assert {a["Properties"]["AddonName"] for a in addons.values()} == {
+        "eks-pod-identity-agent",
+        "coredns",
+    }
+
+
+def test_cilium_is_installed_before_the_system_node_group(templates) -> None:
+    cluster = templates["Cluster"]
+    cilium_id = next(
+        key
+        for key, chart in resources(cluster, "Custom::AWSCDK-EKS-HelmChart").items()
+        if chart["Properties"]["Chart"] == "cilium"
+    )
+    nodegroup = next(iter(resources(cluster, "AWS::EKS::Nodegroup").values()))
+
+    assert cilium_id in nodegroup["DependsOn"]
+    assert nodegroup["Properties"]["Taints"] == [
+        {"Effect": "NO_EXECUTE", "Key": "node.cilium.io/agent-not-ready", "Value": "true"}
+    ]
+
+
+def test_cilium_runs_eni_ipam_with_kube_proxy_replacement(templates) -> None:
+    cilium = next(
+        chart
+        for chart in resources(templates["Cluster"], "Custom::AWSCDK-EKS-HelmChart").values()
+        if chart["Properties"]["Chart"] == "cilium"
+    )
+    values = json.dumps(cilium["Properties"]["Values"])
+
+    for fragment in (
+        '\\"ipam\\":{\\"mode\\":\\"eni\\"}',
+        '\\"awsEnablePrefixDelegation\\":true',
+        '\\"kubeProxyReplacement\\":true',
+        '\\"gatewayAPI\\":{\\"enabled\\":false}',
+        '\\"ui\\":{\\"enabled\\":true}',
+    ):
+        assert fragment in values
+
+
+def test_karpenter_node_pools_carry_the_cilium_startup_taint(templates) -> None:
+    manifests = [
+        json.loads(r["Properties"]["Manifest"])
+        for r in resources(templates["Cluster"], "Custom::AWSCDK-EKS-KubernetesResource").values()
+        if isinstance(r["Properties"]["Manifest"], str)
+    ]
+    pools = {m["metadata"]["name"]: m for doc in manifests for m in doc if m["kind"] == "NodePool"}
+
+    assert set(pools) == {"preview-environments", "baseline"}
+    for pool in pools.values():
+        assert pool["spec"]["template"]["spec"]["startupTaints"] == [
+            {"key": "node.cilium.io/agent-not-ready", "value": "true", "effect": "NoExecute"}
+        ]
+    capacity = {
+        name: next(
+            r["values"]
+            for r in pool["spec"]["template"]["spec"]["requirements"]
+            if r["key"] == "karpenter.sh/capacity-type"
+        )
+        for name, pool in pools.items()
+    }
+    assert capacity == {"preview-environments": ["spot", "on-demand"], "baseline": ["on-demand"]}
+    assert pools["preview-environments"]["spec"]["disruption"]["consolidateAfter"] == "5m"
+
+
+def test_karpenter_interruption_queue_has_dlq_and_enforces_ssl(templates) -> None:
+    cluster = templates["Cluster"]
+
+    cluster.resource_count_is("AWS::SQS::Queue", 2)
+    cluster.has_resource_properties(
+        "AWS::SQS::Queue", {"RedrivePolicy": Match.object_like({"maxReceiveCount": 3})}
+    )
+    cluster.has_resource_properties(
+        "AWS::SQS::QueuePolicy",
+        {
+            "PolicyDocument": {
+                "Statement": Match.array_with(
+                    [
+                        Match.object_like(
+                            {
+                                "Effect": "Deny",
+                                "Condition": {"Bool": {"aws:SecureTransport": "false"}},
+                            }
+                        )
+                    ]
+                ),
+                "Version": "2012-10-17",
+            }
+        },
+    )
+
+
+def test_node_volumes_are_encrypted_and_imdsv2_is_required(templates) -> None:
+    templates["Cluster"].has_resource_properties(
+        "AWS::EC2::LaunchTemplate",
+        {
+            "LaunchTemplateData": Match.object_like(
+                {
+                    "MetadataOptions": Match.object_like({"HttpTokens": "required"}),
+                    "BlockDeviceMappings": [
+                        Match.object_like(
+                            {"Ebs": Match.object_like({"Encrypted": True, "VolumeType": "gp3"})}
+                        )
+                    ],
+                }
+            )
+        },
+    )
+
+
 def test_registry_repositories_are_immutable_and_emptied_on_delete(templates) -> None:
     repos = resources(templates["Registry"], "AWS::ECR::Repository")
     by_name = {r["Properties"]["RepositoryName"]: r["Properties"] for r in repos.values()}

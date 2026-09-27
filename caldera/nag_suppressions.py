@@ -15,6 +15,7 @@ from aws_cdk import Acknowledgment, CfnResource, Stack, Validations
 from aws_cdk import aws_iam as iam
 from constructs import IConstruct
 
+EKS_DOCS = "https://docs.aws.amazon.com/eks/latest/userguide"
 SAR_DOCS = "https://docs.aws.amazon.com/service-authorization/latest/reference/reference_policies_actions-resources-contextkeys.html"
 
 
@@ -25,7 +26,26 @@ class Suppression:
     reason: str
 
 
-SUPPRESSIONS: list[Suppression] = []
+def _eks_managed_policy(role: str, policy: str, guide: str) -> Suppression:
+    return Suppression(
+        path=f"CalderaCluster/{role}/Resource",
+        finding_id=f"AwsSolutions-IAM4[Policy::arn:<AWS::Partition>:iam::aws:policy/{policy}]",
+        reason=f"EKS requires {policy} on this role: {EKS_DOCS}/{guide}",
+    )
+
+
+SUPPRESSIONS: list[Suppression] = [
+    _eks_managed_policy("ClusterRole", "AmazonEKSClusterPolicy", "cluster-iam-role.html"),
+    *(
+        _eks_managed_policy(role, policy, "create-node-role.html")
+        for role in ("SystemNodeRole", "KarpenterNodeRole")
+        for policy in (
+            "AmazonEKSWorkerNodePolicy",
+            "AmazonEC2ContainerRegistryReadOnly",
+            "AmazonSSMManagedInstanceCore",
+        )
+    ),
+]
 
 ACTIONS_WITHOUT_RESOURCE_LEVEL_PERMISSIONS = (
     "ec2:Describe*",
