@@ -55,6 +55,10 @@ mise run verify:clean
 description = "Write the GitHub App credentials for the ARC runners to SSM Parameter Store"
 run = "uv run python -m scripts.put_secrets"
 
+[tasks."dns:nameservers"]
+description = "Print the Route 53 nameservers for the domain, e.g. ENV=sandbox.yaml mise run dns:nameservers"
+run = "uv run python -m scripts.nameservers"
+
 [tasks."kube:connect"]
 description = "Tunnel to the private EKS API and set kubectl context caldera (runs until Ctrl-C)"
 raw = true
