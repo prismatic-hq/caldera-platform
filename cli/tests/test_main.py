@@ -3,11 +3,13 @@ import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
 import pytest
 from typer.testing import CliRunner
 
 from preview_cli import main
 from preview_cli.aws import Image
+from preview_cli.github import API_URL, GitHub
 from preview_cli.lock import Lease
 
 runner = CliRunner()
@@ -543,3 +545,17 @@ def test_failed_e2e_still_publishes_its_timing(
 
     assert result.exit_code == 1
     assert "| e2e |" in step_summary.read_text()
+
+
+def test_resolve_fails_loudly_when_the_token_cannot_read_the_other_repo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport = httpx.MockTransport(lambda request: httpx.Response(404, json={}))
+    client = httpx.Client(base_url=API_URL, transport=transport)
+    monkeypatch.setattr(main, "_github", lambda: GitHub(None, client))
+
+    code, output = invoke("env", "resolve", "--repo", "tremor-api", "--branch", "feature/x")
+
+    assert code == 2
+    assert "cannot read prismatic-hq/steward-api (HTTP 404)" in output
+    assert "CALDERA_TOKEN" in output
