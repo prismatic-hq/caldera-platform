@@ -1,0 +1,9 @@
+services:
+  - name: tremor
+    repo: tremor-api
+    image: tremor-api
+    port: 8000
+  - name: steward
+    repo: steward-api
+    image: steward-api
+    port: 8000
