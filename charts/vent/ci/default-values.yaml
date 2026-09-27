@@ -1,0 +1,6 @@
+vent:
+  name: ci
+postgres:
+  image:
+    repository: postgres
+    tag: "17"

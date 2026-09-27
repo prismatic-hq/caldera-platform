@@ -12,6 +12,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  HELM_VERSION: v4.3.0
+  HELM_UNITTEST_IMAGE: helmunittest/helm-unittest:4.2.3-1.1.2
+  CT_IMAGE: quay.io/helmpack/chart-testing:v3.14.0
+  KUBECONFORM_IMAGE: ghcr.io/yannh/kubeconform:v0.8.0
+  TRIVY_IMAGE: aquasec/trivy:0.74.0
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -68,3 +75,36 @@ jobs:
           uv run check-jsonschema
           --schemafile contracts/events/registry.v1.schema.json
           contracts/events/registry.v1.yaml
+
+  chart-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: >-
+          docker run --rm -v "$PWD:/repo" -w /repo "$CT_IMAGE"
+          sh -c 'git config --global --add safe.directory "*" && ct lint --charts charts/vent --target-branch main'
+
+  chart-unittest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/apps" "$HELM_UNITTEST_IMAGE" charts/vent
+
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Render vent examples
+        run: |
+          mkdir -p rendered
+          for values in charts/vent/ci/*-values.yaml; do
+            name=$(basename "$values" .yaml)
+            helm template "vent-$name" charts/vent -n "vent-$name" -f "$values" > "rendered/$name.yaml"
+          done
+      - run: docker run --rm -v "$PWD/rendered:/r" "$KUBECONFORM_IMAGE" -strict -summary -ignore-missing-schemas /r
+      - run: docker run --rm -v "$PWD/rendered:/r" "$TRIVY_IMAGE" config --exit-code 1 /r
