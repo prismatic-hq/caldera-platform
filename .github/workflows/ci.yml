@@ -119,10 +119,17 @@ jobs:
     needs: [lint, test]
     runs-on: caldera-platform-runners
     env:
-      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
       IMAGE_NAME: e2e
       BUILD_CACHE_REPOSITORY: build-cache
     steps:
+      - id: config
+        name: Check workflow configuration
+        run: |
+          if [ -z "$AWS_REGION" ]; then
+            echo "::error::$GITHUB_REPOSITORY is missing variable AWS_REGION. Set it at repository level; private repos on GitHub Free cannot read organization variables."
+            exit 1
+          fi
       - uses: actions/checkout@v7
       - id: ecr
         uses: aws-actions/amazon-ecr-login@v2
