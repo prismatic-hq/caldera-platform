@@ -1,19 +1,97 @@
 name: golden-image
 
 on:
+  schedule:
+    - cron: "17 6 * * *"
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - seeder/**
+      - images/golden-db/**
+      - scripts/golden_image.py
+      - .github/workflows/golden-image.yml
 
 permissions:
   contents: read
 
+concurrency:
+  group: golden-image
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  POSTGRES_IMAGE: postgres:17.11-alpine3.24
+  PLATFORMS: linux/amd64,linux/arm64
+  REPOSITORY: golden-db
+  SERVICES_DIR: .services
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    if: github.repository_owner == 'prismatic-hq'
+    runs-on: caldera-platform-runners
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: prismatic-hq/tremor-api
+          ref: main
+          path: ${{ env.SERVICES_DIR }}/tremor-api
+          token: ${{ secrets.CALDERA_TOKEN || github.token }}
+      - uses: actions/checkout@v7
+        with:
+          repository: prismatic-hq/steward-api
+          ref: main
+          path: ${{ env.SERVICES_DIR }}/steward-api
+          token: ${{ secrets.CALDERA_TOKEN || github.token }}
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
       - run: uv sync --locked
-      - name: Seeder digest (image build not implemented, see images/golden-db/README.md)
-        run: uv run golden-seeder --digest
+      - id: version
+        run: |
+          heads() { uv run --directory "$SERVICES_DIR/$1" --locked --no-dev alembic heads; }
+          version=$(uv run python -m scripts.golden_image version \
+            --head "tremor=$(heads tremor-api)" --head "steward=$(heads steward-api)")
+          exists=$(uv run python -m scripts.golden_image exists --repository "$REPOSITORY" --tag "$version")
+          printf 'version=%s\nexists=%s\n' "$version" "$exists" >> "$GITHUB_OUTPUT"
+          echo "::notice::dataset version $version (already in ECR: $exists)"
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v4
+      - if: steps.version.outputs.exists != 'true'
+        name: Migrate, seed and verify the dataset twice
+        run: >-
+          images/golden-db/prepare-dataset.sh
+          "$SERVICES_DIR/tremor-api" "$SERVICES_DIR/steward-api" "$RUNNER_TEMP/dataset"
+      - if: steps.version.outputs.exists != 'true'
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+      - if: steps.version.outputs.exists != 'true'
+        name: Build the image and enforce the 1 GiB compressed cap
+        run: |
+          docker buildx build images/golden-db \
+            --platform "$PLATFORMS" \
+            --build-arg POSTGRES_IMAGE="$POSTGRES_IMAGE" \
+            --build-context dataset="$RUNNER_TEMP/dataset" \
+            --output type=oci,dest="$RUNNER_TEMP/golden-oci",tar=false
+          uv run python -m scripts.golden_image check-size "$RUNNER_TEMP/golden-oci"
+      - if: steps.version.outputs.exists != 'true'
+        name: Push golden-db:<dataset-version>
+        env:
+          IMAGE: ${{ steps.ecr.outputs.registry }}/${{ env.REPOSITORY }}:${{ steps.version.outputs.version }}
+        run: |
+          docker buildx build images/golden-db \
+            --platform "$PLATFORMS" \
+            --build-arg POSTGRES_IMAGE="$POSTGRES_IMAGE" \
+            --build-context dataset="$RUNNER_TEMP/dataset" \
+            --tag "$IMAGE" --push
+      - name: Point latest and the SSM parameter at this dataset version
+        env:
+          REPOSITORY_URI: ${{ steps.ecr.outputs.registry }}/${{ env.REPOSITORY }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          docker buildx imagetools create --tag "$REPOSITORY_URI:latest" "$REPOSITORY_URI:$VERSION"
+          uv run python -m scripts.golden_image publish --version "$VERSION"

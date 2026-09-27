@@ -1,26 +1,33 @@
 # golden-db
 
-Postgres image with the golden dataset baked into its data directory, tagged
-`golden-db:<dataset-version>` (REQUIREMENTS.md FR-6). Not built yet; this describes the build.
+Postgres with the golden dataset baked into the image, tagged `golden-db:<dataset-version>`
+(REQUIREMENTS.md FR-6). Built by `.github/workflows/golden-image.yml` nightly, on dispatch and on
+`main` pushes that change the seeder or this directory.
 
-## Build (`golden-image` workflow, nightly and on `main` merges that change migrations)
+## Build
 
-1. Start Postgres in the build container with an empty data directory under `/var/lib/postgresql/data`.
-2. Run `alembic upgrade head` from `main` of `tremor-api` and `steward-api`; each creates its own
-   schema (`tremor`, `steward`) and Alembic version table.
-3. Load `golden-seeder` output (`uv run golden-seeder | psql`).
-4. Compute a per-table checksum (ordered `SELECT` hashed with `sha256`) and fail on mismatch
-   with the expected value for the same inputs.
-5. Stop Postgres cleanly (`pg_ctl stop -m smart`) and copy the data directory into the final image.
-6. Push to ECR as `golden-db:<dataset-version>`.
+1. `dataset-version` = hash of the `golden-seeder` digest plus the single Alembic head of
+   `tremor-api` and `steward-api` on `main` (`scripts/golden_image.py version`). If ECR already
+   has that tag, the build is skipped and only `latest` and SSM are updated.
+2. `prepare-dataset.sh` runs `main` migrations of both services and `golden-seeder` against two
+   fresh Postgres containers, fails if their per-table checksums (`checksums.sql`) differ, and
+   dumps the first one.
+3. The Dockerfile restores the dump per platform (amd64, arm64), fails unless the checksums
+   match the workflow's, and stops Postgres cleanly before copying the data directory.
+4. The workflow fails if any platform is over 1 GiB compressed, then pushes the image and writes
+   the version to SSM `/prismatic/golden-db/dataset-version`.
 
-`dataset-version` = hash of the `golden-seeder --digest` output plus both Alembic heads, so the
-same inputs always give the same tag and checksum (FR-6.3).
+Local build (arm64 or amd64 only):
+
+```sh
+images/golden-db/prepare-dataset.sh ../tremor-api ../steward-api /tmp/golden
+docker buildx build --load -t golden-db:local --build-context dataset=/tmp/golden images/golden-db
+```
 
 ## Runtime contract
 
-- Runs as a non-root user (uid 10001) so the `services` chart security context applies unchanged.
-- The entrypoint sets the role password from `POSTGRES_PASSWORD` with `ALTER ROLE` before
-  accepting connections (FR-5.8), because every preview environment starts from the same data directory.
-- The data directory is copied to the preview environment's `emptyDir` at start; a pod restart resets the preview environment.
-- Compressed size stays under 1 GB (FR-6.4).
+- Runs as uid 10001 with a read-only root filesystem; `PGDATA` must be writable (`emptyDir`).
+- On start the entrypoint copies the golden data into an empty `PGDATA`, sets the role password
+  from `POSTGRES_PASSWORD` with `ALTER ROLE` while listening on the socket only (FR-5.8), then
+  listens on TCP. It refuses to start without `POSTGRES_PASSWORD`; the baked role has no password.
+- A pod restart gives a fresh `emptyDir`, so the preview environment resets to golden data.
