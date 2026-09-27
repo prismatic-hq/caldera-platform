@@ -266,11 +266,12 @@ Expected `AwsSolutionsChecks` findings for this design and how each is resolved:
 | EC26 and related | Unencrypted EBS on nodes | Fix: encrypted gp3 root volumes in the managed node group launch template and the Karpenter `EC2NodeClass`; IMDSv2 required on both |
 
 Suppression policy:
-- Default is fix at source. Exactly two suppression categories are allowed, both because AWS itself requires them:
+- Default is fix at source. Exactly three suppression categories are allowed, all because AWS itself requires them:
   - IAM4 on the EKS cluster role and the node roles (managed node group and Karpenter), where AWS requires or recommends its managed policies (`AmazonEKSClusterPolicy`, `AmazonEKSWorkerNodePolicy`, `AmazonEC2ContainerRegistryReadOnly`, `AmazonSSMManagedInstanceCore`).
   - IAM5 `Resource::*` only for actions listed in the AWS Service Authorization Reference as not supporting resource-level permissions (for example `ecr:GetAuthorizationToken`, `ec2:Describe*`, `elasticloadbalancing:Describe*`, `route53:ListHostedZones`, `route53:ListHostedZonesByName`). Each suppression names the exact role and action; any action that does support resource ARNs or conditions must be scoped, never suppressed.
-- A unit test synthesizes the app and asserts that every suppression is IAM4 on the named EKS roles or IAM5 on an action from the allowed list, so a new suppression outside the policy fails CI.
-- Every suppression lives in one file, `caldera/nag_suppressions.py`, uses `NagSuppressions.add_resource_suppressions` on the exact resource with `applies_to` for the exact permission, and carries a reason that links the AWS or CDK documentation.
+  - IAM5 on an ARN scoped to one resource type in this account and region (for example `arn:aws:ec2:<region>:<account>:network-interface/*`), for resources that controllers (Karpenter, Cilium, Load Balancer Controller, cert-manager, drainer, sweeper) create at runtime, whose IDs cannot be known at synth time. Such statements carry `aws:ResourceTag`, `aws:RequestTag` or `ec2:Vpc` conditions wherever the action supports them. A wildcard region, account or resource type is never allowed.
+- A unit test synthesizes the app and asserts that every suppression is IAM4 on the named EKS roles, IAM5 on an action from the allowed list, or IAM5 on a scoped ARN, so a new suppression outside the policy fails CI.
+- Every suppression lives in one file, `caldera/nag_suppressions.py`, acknowledges one exact finding on the exact resource, and carries a reason that links the AWS or CDK documentation. The IAM5 acknowledgments are derived from the policy documents, so a new wildcard outside the allowed categories fails the synth.
 - CI prints the suppression count; any new suppression requires review in the PR.
 
 Checks beyond cdk-nag (runtime and in-cluster):
@@ -318,7 +319,7 @@ Not installed (roadmap, Section 9): Argo CD, Kargo, Argo Rollouts, Istio, Crossp
 | NFR-6.2 | Reliability | Spot interruption | Preview environment pods reschedule and the database resets to golden; acceptable for previews |
 | NFR-7.1 | Developer experience | Developers need no AWS or kubectl access to use preview environments | Push a branch, read URLs, timings and E2E result on the PR |
 | NFR-7.2 | Developer experience | Same commands everywhere | `preview` CLI identical in CI, on a laptop against EKS, and on kind |
-| NFR-8.1 | Compliance | Templates meet AWS Solutions best practices | `cdk synth` with `AwsSolutionsChecks` has zero unsuppressed errors; suppressions limited to IAM4 on EKS cluster/node roles and IAM5 on actions without resource-level permissions, enforced by a test |
+| NFR-8.1 | Compliance | Templates meet AWS Solutions best practices | `cdk synth` with `AwsSolutionsChecks` has zero unsuppressed errors; suppressions limited to IAM4 on EKS cluster/node roles, IAM5 on actions without resource-level permissions and IAM5 on ARNs scoped to one resource type, enforced by a test |
 | NFR-8.2 | Compliance | Well-Architected review | No unacknowledged high-risk issues in the Well-Architected Tool; accepted PoC risks listed in Section 4c |
 
 ---
@@ -335,7 +336,7 @@ Not installed (roadmap, Section 9): Argo CD, Kargo, Argo Rollouts, Istio, Crossp
 | Images | Pre-pull DaemonSet + shared base image + small app layers | Pre-pull uses node disk for images a preview environment may never need; pulls in seconds |
 | Routing | Cilium for CNI + Envoy Gateway for north-south, wildcard DNS (external-dns, wildcard records only) and wildcard certificate | Two networking components instead of one; richer request-level auth and authorization at the edge; no per-environment DNS or certificate delay |
 | Preview auth | Open by default; oauth2-proxy login is the access control; IP allowlist optional and off | Until login ships, preview URLs are reachable by anyone who knows them (synthetic data only, unguessable only by obscurity); one shared gateway listener keeps auth changes platform-only |
-| cdk-nag findings | Fix at source; suppress only IAM4 on the EKS cluster and node roles and IAM5 `Resource: *` for actions AWS documents as not supporting resource-level permissions | Secrets move to in-cluster generation and SSM Parameter Store to clear SMG4 without rotation Lambdas; a test pins the suppression list to these two categories |
+| cdk-nag findings | Fix at source; suppress only IAM4 on the EKS cluster and node roles, IAM5 `Resource: *` for actions AWS documents as not supporting resource-level permissions, and IAM5 on ARNs scoped to one resource type for runtime-created resources | Secrets move to in-cluster generation and SSM Parameter Store to clear SMG4 without rotation Lambdas; a test pins the suppression list to these three categories |
 | Runners | In-cluster ARC runners | Cluster runs CI code, so fork code is excluded; no runner cold start, warm caches, no credentials leave the cluster |
 | Deploy model | Push-based Helm from CI | No drift reconciliation; fastest path, and the chart carries over to GitOps later |
 | Feature groups | Branch name convention | Relies on naming discipline; transparent, no extra service |

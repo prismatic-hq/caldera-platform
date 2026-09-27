@@ -1,4 +1,3 @@
-import json
 import re
 import runpy
 from fnmatch import fnmatch
@@ -26,10 +25,18 @@ EKS_MANAGED_POLICIES = {
 }
 ACTIONS_WITHOUT_RESOURCE_LEVEL_PERMISSIONS = (
     "ecr:GetAuthorizationToken",
+    "ecr-public:GetAuthorizationToken",
     "ec2:Describe*",
     "elasticloadbalancing:Describe*",
+    "pricing:GetProducts",
     "route53:ListHostedZones",
     "route53:ListHostedZonesByName",
+    "sts:GetServiceBearerToken",
+)
+SCOPED_WILDCARD = re.compile(
+    r"^Resource::(arn:(<AWS::Partition>|aws[a-z-]*):[a-z0-9-]+:"
+    r"(<AWS::Region>|[a-z]{2}(-[a-z]+)+-\d)?:(<AWS::AccountId>|\d{12})?"
+    r":[a-z-]+[/:][^*]*\*|<[A-Za-z0-9]+\.Arn>:\*)$"
 )
 IAM_POLICY_TYPES = {"AWS::IAM::Policy", "AWS::IAM::ManagedPolicy", "AWS::IAM::Role"}
 
@@ -68,6 +75,8 @@ def _iam5_violations(path: str, resource: dict, finding: str) -> list[str]:
         return [f"{path}: IAM5 suppression on a non-IAM resource"]
     if finding.startswith("Action::") and _is_allowlisted_action(finding.removeprefix("Action::")):
         return []
+    if SCOPED_WILDCARD.match(finding):
+        return []
     if finding != "Resource::*":
         return [f"{path}: IAM5 on {finding} is not allowed"]
     return [
@@ -78,6 +87,8 @@ def _iam5_violations(path: str, resource: dict, finding: str) -> list[str]:
 
 
 def _rule_violations(path: str, resource: dict, suppression_id: str) -> list[str]:
+    if not suppression_id.startswith("AwsSolutions-"):
+        return []
     match = FINDING_ID.match(suppression_id)
     if match is None:
         return [f"{path}: {suppression_id} must name one exact finding as Rule[Finding]"]
@@ -182,6 +193,42 @@ POLICY_PATH = "CalderaAddons/Policy/Resource"
             id="IAM5 on a wildcard action",
         ),
         pytest.param(
+            _resource(
+                "AWS::IAM::Policy",
+                POLICY_PATH,
+                [
+                    "AwsSolutions-IAM5[Resource::arn:<AWS::Partition>:ec2:<AWS::Region>:"
+                    "<AWS::AccountId>:instance/*]",
+                    "AwsSolutions-IAM5[Resource::arn:<AWS::Partition>:route53:::change/*]",
+                    "AwsSolutions-IAM5[Resource::<HandlerABC123.Arn>:*]",
+                    "AwsSolutions-IAM5[Resource::arn:aws:ec2:us-east-2:123456789012:volume/*]",
+                ],
+            ),
+            0,
+            id="IAM5 on ARNs scoped to one resource type",
+        ),
+        pytest.param(
+            _resource(
+                "AWS::IAM::Policy",
+                POLICY_PATH,
+                [
+                    "AwsSolutions-IAM5[Resource::arn:<AWS::Partition>:ec2:*:*:instance/*]",
+                    "AwsSolutions-IAM5[Resource::arn:<AWS::Partition>:s3:::*]",
+                    "AwsSolutions-IAM5[Resource::arn:<AWS::Partition>:ec2:<AWS::Region>:"
+                    "<AWS::AccountId>:*]",
+                ],
+            ),
+            3,
+            id="IAM5 on ARNs with wildcard region, account or resource type",
+        ),
+        pytest.param(
+            _resource(
+                "AWS::EC2::VPC", "CalderaNetwork/Vpc/Resource", ["CloudFormation-Validate::W3010"]
+            ),
+            0,
+            id="CDK validation acknowledgment outside cdk-nag",
+        ),
+        pytest.param(
             _resource("AWS::S3::Bucket", "CalderaAddons/Bucket/Resource", ["AwsSolutions-S1"]),
             1,
             id="any other rule",
@@ -194,10 +241,13 @@ def test_suppression_policy(template: dict, expected_count: int) -> None:
 
 @pytest.fixture(scope="module")
 def synthesized_app(tmp_path_factory: pytest.TempPathFactory) -> cdk.App:
-    with pytest.MonkeyPatch.context() as env:
-        env.setenv("CDK_OUTDIR", str(tmp_path_factory.mktemp("cdk.out")))
-        env.setenv("CDK_CONTEXT_JSON", json.dumps({"aws:cdk:enable-path-metadata": True}))
-        return runpy.run_path(str(REPO_ROOT / "app.py"))["app"]
+    build = runpy.run_path(str(REPO_ROOT / "app.py"))["build"]
+    return build(
+        cdk.App(
+            outdir=str(tmp_path_factory.mktemp("cdk.out")),
+            context={"aws:cdk:enable-path-metadata": True},
+        )
+    )
 
 
 def test_app_synthesizes_with_nag_checks_and_policy_compliant_suppressions(
