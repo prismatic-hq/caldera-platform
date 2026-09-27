@@ -1,4 +1,11 @@
-from preview_cli.commands import Target, down_commands, image_tag, reset_commands, up_commands
+from preview_cli.commands import (
+    Target,
+    down_commands,
+    image_tag,
+    list_environments_command,
+    reset_commands,
+    up_commands,
+)
 from preview_cli.registry import ServiceSpec
 from preview_cli.resolver import Action, PreviewPlan
 
@@ -18,8 +25,14 @@ def test_image_tag_uses_short_sha() -> None:
     assert image_tag("a1b2c3d4e5f6") == "sha-a1b2c3d"
 
 
+def test_up_builds_chart_dependencies_first() -> None:
+    build, _ = up_commands(PLAN, SERVICES, SHAS, "ds-42", Target())
+
+    assert build == ["helm", "dependency", "build", "charts/services"]
+
+
 def test_up_runs_helm_upgrade_install_into_the_environment_namespace() -> None:
-    [command] = up_commands(PLAN, SERVICES, SHAS, "ds-42", Target(registry="123.dkr.ecr.aws"))
+    _, command = up_commands(PLAN, SERVICES, SHAS, "ds-42", Target(registry="123.dkr.ecr.aws"))
 
     assert command[:5] == [
         "helm",
@@ -34,6 +47,9 @@ def test_up_runs_helm_upgrade_install_into_the_environment_namespace() -> None:
     assert flag_values(command, "--set-string") == [
         "environment.name=quake-alerts",
         "datasetVersion=ds-42",
+        "environment.kind=preview",
+        "priorityClassName=preview-environment",
+        "routeLabels.prismatic\\.dev/exposure=preview",
         "services.tremor.image.repository=tremor-api",
         "services.tremor.image.tag=sha-a1b2c3d",
         "services.steward.image.repository=steward-api",
@@ -50,15 +66,28 @@ def test_up_sets_values_for_every_registered_service() -> None:
     services = (*SERVICES, ServiceSpec("magma", "magma-api", "magma-api"))
     plan = PreviewPlan("x", Action.UP, {"tremor": "main", "steward": "main", "magma": "feature/x"})
 
-    [command] = up_commands(plan, services, {**SHAS, "magma": "abcdef0"}, "ds", Target())
+    _, command = up_commands(plan, services, {**SHAS, "magma": "abcdef0"}, "ds", Target())
 
     assert "services.magma.image.tag=sha-abcdef0" in flag_values(command, "--set-string")
 
 
 def test_up_passes_the_kube_context_to_helm() -> None:
-    [command] = up_commands(PLAN, SERVICES, SHAS, "ds-42", Target(context="kind-caldera"))
+    _, command = up_commands(PLAN, SERVICES, SHAS, "ds-42", Target(context="kind-caldera"))
 
     assert command[-2:] == ["--kube-context", "kind-caldera"]
+
+
+def test_list_environments_reads_preview_helm_releases() -> None:
+    assert list_environments_command(Target(context="kind-caldera")) == [
+        "helm",
+        "list",
+        "--all-namespaces",
+        "--short",
+        "--filter",
+        "^preview-",
+        "--kube-context",
+        "kind-caldera",
+    ]
 
 
 def test_down_uninstalls_release_then_deletes_namespace() -> None:

@@ -22,6 +22,13 @@ def _kubectl_context(target: Target) -> list[str]:
     return ["--context", target.context] if target.context else []
 
 
+PREVIEW_VALUES = (
+    "environment.kind=preview",
+    "priorityClassName=preview-environment",
+    "routeLabels.prismatic\\.dev/exposure=preview",
+)
+
+
 def image_tag(sha: str) -> str:
     return f"sha-{sha[:7]}"
 
@@ -34,7 +41,11 @@ def up_commands(
     target: Target,
 ) -> list[Command]:
     namespace = plan.release
-    strings = [f"environment.name={plan.environment}", f"datasetVersion={dataset_version}"]
+    strings = [
+        f"environment.name={plan.environment}",
+        f"datasetVersion={dataset_version}",
+        *PREVIEW_VALUES,
+    ]
     numbers = []
     for service in services:
         strings += [
@@ -61,7 +72,18 @@ def up_commands(
         command += ["--set-string", value]
     for value in numbers:
         command += ["--set", value]
-    return [command + _helm_context(target)]
+    return [["helm", "dependency", "build", target.chart], command + _helm_context(target)]
+
+
+def list_environments_command(target: Target) -> Command:
+    return [
+        "helm",
+        "list",
+        "--all-namespaces",
+        "--short",
+        "--filter",
+        "^preview-",
+    ] + _helm_context(target)
 
 
 def down_commands(environment: str, target: Target) -> list[Command]:
