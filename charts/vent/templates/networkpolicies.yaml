@@ -4,7 +4,7 @@ metadata:
   name: default-deny
   namespace: {{ $.Release.Namespace }}
   labels:
-    {{- include "vent.labels" . | nindent 4 }}
+    {{- include "preview.labels" . | nindent 4 }}
 spec:
   podSelector: {}
   policyTypes: ["Ingress", "Egress"]
@@ -15,7 +15,7 @@ metadata:
   name: allow-same-namespace
   namespace: {{ $.Release.Namespace }}
   labels:
-    {{- include "vent.labels" . | nindent 4 }}
+    {{- include "preview.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchExpressions:
@@ -36,7 +36,7 @@ metadata:
   name: allow-gateway-to-services
   namespace: {{ $.Release.Namespace }}
   labels:
-    {{- include "vent.labels" . | nindent 4 }}
+    {{- include "preview.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
@@ -56,7 +56,7 @@ metadata:
   name: allow-dns
   namespace: {{ $.Release.Namespace }}
   labels:
-    {{- include "vent.labels" . | nindent 4 }}
+    {{- include "preview.labels" . | nindent 4 }}
 spec:
   podSelector: {}
   policyTypes: ["Egress"]
@@ -80,7 +80,7 @@ metadata:
   name: postgres-from-vent-workloads
   namespace: {{ $.Release.Namespace }}
   labels:
-    {{- include "vent.labels" . | nindent 4 }}
+    {{- include "preview.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:

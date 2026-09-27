@@ -7,28 +7,28 @@ metadata:
   name: {{ $name }}
   namespace: {{ $.Release.Namespace }}
   labels:
-    {{- include "vent.labels" $ | nindent 4 }}
-    {{- include "vent.selectorLabels" (dict "name" $name) | nindent 4 }}
+    {{- include "preview.labels" $ | nindent 4 }}
+    {{- include "preview.selectorLabels" (dict "name" $name) | nindent 4 }}
     app.kubernetes.io/component: api
 spec:
   replicas: 1
   selector:
     matchLabels:
-      {{- include "vent.selectorLabels" (dict "name" $name) | nindent 6 }}
+      {{- include "preview.selectorLabels" (dict "name" $name) | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "vent.labels" $ | nindent 8 }}
-        {{- include "vent.selectorLabels" (dict "name" $name) | nindent 8 }}
+        {{- include "preview.labels" $ | nindent 8 }}
+        {{- include "preview.selectorLabels" (dict "name" $name) | nindent 8 }}
         app.kubernetes.io/component: api
     spec:
       priorityClassName: {{ $.Values.priorityClassName }}
       automountServiceAccountToken: false
       securityContext:
-        {{- include "vent.podSecurityContext" (dict "uid" 10001) | nindent 8 }}
+        {{- include "preview.podSecurityContext" (dict "uid" 10001) | nindent 8 }}
       containers:
         - name: api
-          image: {{ include "vent.image" (dict "root" $ "image" $service.image "tag" $service.image.tag) }}
+          image: {{ include "preview.image" (dict "root" $ "image" $service.image "tag" $service.image.tag) }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
           ports:
             - name: http
@@ -66,7 +66,7 @@ spec:
           resources:
             {{- toYaml $service.resources | nindent 12 }}
           securityContext:
-            {{- include "vent.containerSecurityContext" $ | nindent 12 }}
+            {{- include "preview.containerSecurityContext" $ | nindent 12 }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -80,12 +80,12 @@ metadata:
   name: {{ $name }}
   namespace: {{ $.Release.Namespace }}
   labels:
-    {{- include "vent.labels" $ | nindent 4 }}
-    {{- include "vent.selectorLabels" (dict "name" $name) | nindent 4 }}
+    {{- include "preview.labels" $ | nindent 4 }}
+    {{- include "preview.selectorLabels" (dict "name" $name) | nindent 4 }}
     app.kubernetes.io/component: api
 spec:
   selector:
-    {{- include "vent.selectorLabels" (dict "name" $name) | nindent 4 }}
+    {{- include "preview.selectorLabels" (dict "name" $name) | nindent 4 }}
   ports:
     - name: http
       port: {{ $service.port }}
