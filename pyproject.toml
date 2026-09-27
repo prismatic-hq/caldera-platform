@@ -15,8 +15,10 @@ dependencies = [
 [dependency-groups]
 dev = [
     "check-jsonschema>=0.38",
+    "jsonschema>=4.25",
     "pre-commit>=4.3",
     "pytest>=8.4",
+    "pyyaml>=6",
     "ruff>=0.14",
 ]
 
