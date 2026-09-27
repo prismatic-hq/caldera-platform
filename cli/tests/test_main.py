@@ -418,7 +418,7 @@ def test_up_waits_for_the_environment_lock_and_times_out_clearly(
     assert "held by prismatic-hq/steward-api/7" in output
 
 
-def test_reset_releases_the_lock_when_the_restart_fails(
+def test_reset_releases_the_lock_when_the_helm_upgrade_fails(
     leases, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     store = leases(MemoryLeases())
