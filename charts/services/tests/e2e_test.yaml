@@ -79,3 +79,30 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+  - it: schedules onto the tainted preview pool when set
+    set:
+      nodeSelector:
+        karpenter.sh/nodepool: preview-environments
+      tolerations:
+        - key: prismatic.dev/preview
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+    asserts:
+      - equal:
+          path: spec.nodeSelector
+          value:
+            karpenter.sh/nodepool: preview-environments
+      - equal:
+          path: spec.tolerations
+          value:
+            - key: prismatic.dev/preview
+              operator: Equal
+              value: "true"
+              effect: NoSchedule
+  - it: leaves scheduling to the cluster by default
+    asserts:
+      - notExists:
+          path: spec.nodeSelector
+      - notExists:
+          path: spec.tolerations

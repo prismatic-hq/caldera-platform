@@ -2,7 +2,7 @@ apiVersion: v2
 name: service
 description: One HTTP service - Deployment, Service, optional HTTPRoute and its gateway ingress policy
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "0.1.0"
 maintainers:
   - name: ryanmcafee

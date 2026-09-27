@@ -33,6 +33,7 @@ GITHUB_APP_SECRET = "github-app"
 RUNNER_REPOS_CONTEXT = "runnerRepos"
 RUNNER_SCALE_SET_SUFFIX = "-runners"
 KUBECTL_CONCURRENCY = 3
+PLATFORM_PRIORITY = "platform"
 NLB_ANNOTATIONS = {
     f"service.beta.kubernetes.io/aws-load-balancer-{key}": value
     for key, value in {
@@ -82,13 +83,14 @@ class AddonsStack(Stack):
         self.dns = dns
         self.vpc = network.vpc
         self.installed: list[IConstruct] = []
+        self.platform_base = self._platform_base()
 
         self._chart("MetricsServer", charts.METRICS_SERVER, {"replicas": 2})
         load_balancer_controller = self._load_balancer_controller()
         cert_manager = self._cert_manager()
         external_dns = self._external_dns()
         gateway = self._gateway(load_balancer_controller, cert_manager, external_dns)
-        keda = self._chart("Keda", charts.KEDA, {})
+        keda = self._chart("Keda", charts.KEDA, {"priorityClassName": PLATFORM_PRIORITY})
         external_secrets = self._external_secrets()
         self._platform_manifests(keda)
         self._runners(external_secrets)
@@ -113,7 +115,7 @@ class AddonsStack(Stack):
                     self, f"{construct_id}Identity", chart.namespace, service_account, role
                 )
             )
-        for dependency in after or []:
+        for dependency in [self.platform_base, *(after or [])]:
             installed.node.add_dependency(dependency)
         self.installed.append(installed)
         return installed
@@ -159,6 +161,7 @@ class AddonsStack(Stack):
             charts.CERT_MANAGER,
             {
                 "crds": {"enabled": True},
+                "global": {"priorityClassName": PLATFORM_PRIORITY},
                 "serviceAccount": {"name": "cert-manager"},
                 "extraArgs": [
                     "--dns01-recursive-nameservers-only",
@@ -205,13 +208,19 @@ class AddonsStack(Stack):
                 "extraArgs": ["--aws-zone-type=public"],
                 "env": [{"name": "AWS_DEFAULT_REGION", "value": self.region}],
                 "serviceAccount": {"name": "external-dns"},
+                "priorityClassName": PLATFORM_PRIORITY,
             },
             identity=("external-dns", self.dns.external_dns_role),
         )
 
     def _gateway(self, *ready: IConstruct) -> eks.KubernetesManifest:
         """One shared Gateway behind one NLB; every preview HTTPRoute attaches to it."""
-        envoy_gateway = self._chart("EnvoyGateway", charts.ENVOY_GATEWAY, {}, after=list(ready))
+        envoy_gateway = self._chart(
+            "EnvoyGateway",
+            charts.ENVOY_GATEWAY,
+            {"deployment": {"priorityClassName": PLATFORM_PRIORITY}},
+            after=list(ready),
+        )
         hostnames = [f"*.{self.config.preview_domain}", f"*.{self.config.dev_domain}"]
         certificate = {
             "apiVersion": "cert-manager.io/v1",
@@ -231,7 +240,10 @@ class AddonsStack(Stack):
                 "provider": {
                     "type": "Kubernetes",
                     "kubernetes": {
-                        "envoyDeployment": {"replicas": 2},
+                        "envoyDeployment": {
+                            "replicas": 2,
+                            "pod": {"priorityClassName": PLATFORM_PRIORITY},
+                        },
                         "envoyService": {
                             "type": "LoadBalancer",
                             "loadBalancerClass": "service.k8s.aws/nlb",
@@ -362,7 +374,13 @@ class AddonsStack(Stack):
         chart = self._chart(
             "ExternalSecrets",
             charts.EXTERNAL_SECRETS,
-            {"installCRDs": True, "serviceAccount": {"name": "external-secrets"}},
+            {
+                "installCRDs": True,
+                "serviceAccount": {"name": "external-secrets"},
+                "priorityClassName": PLATFORM_PRIORITY,
+                "webhook": {"priorityClassName": PLATFORM_PRIORITY},
+                "certController": {"priorityClassName": PLATFORM_PRIORITY},
+            },
             identity=("external-secrets", role),
         )
         store = {
@@ -373,23 +391,29 @@ class AddonsStack(Stack):
         }
         return self._manifest("ParameterStore", store, after=[chart])
 
-    def _platform_manifests(self, keda: eks.HelmChart) -> None:
-        """PriorityClasses, headroom and its KEDA ScaledObject from platform/."""
+    def _platform_base(self) -> eks.KubernetesManifest:
+        """Namespace and PriorityClasses from platform/, applied before any chart uses them."""
         manifests = platform_manifests()
-        base = self._manifest(
+        return self._manifest(
             "PlatformBase",
             *manifests["namespace"],
             *manifests["priorityclasses"],
             after=[self.platform.karpenter],
         )
-        headroom = self._manifest("Headroom", *manifests["headroom"], after=[base])
+
+    def _platform_manifests(self, keda: eks.HelmChart) -> None:
+        """Headroom and its KEDA ScaledObject from platform/."""
+        manifests = platform_manifests()
+        headroom = self._manifest("Headroom", *manifests["headroom"], after=[self.platform_base])
         self._manifest(
             "HeadroomScaling", *manifests["headroom-scaledobject"], after=[headroom, keda]
         )
 
     def _runners(self, parameter_store: IConstruct) -> None:
         """ARC controller plus one runner scale set per repository, credentials from SSM."""
-        controller = self._chart("ArcController", charts.ARC_CONTROLLER, {})
+        controller = self._chart(
+            "ArcController", charts.ARC_CONTROLLER, {"priorityClassName": PLATFORM_PRIORITY}
+        )
         github_app = {
             "apiVersion": "external-secrets.io/v1",
             "kind": "ExternalSecret",
@@ -433,6 +457,12 @@ class AddonsStack(Stack):
                     "maxRunners": 10,
                     "containerMode": {"type": "dind"},
                     "template": {"spec": {"serviceAccountName": RUNNER_SERVICE_ACCOUNT}},
+                    "listenerTemplate": {
+                        "spec": {
+                            "priorityClassName": PLATFORM_PRIORITY,
+                            "containers": [{"name": "listener"}],
+                        }
+                    },
                 },
                 after=[controller, access],
                 release=runner_scale_set(repo),

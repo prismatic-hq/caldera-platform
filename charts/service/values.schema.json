@@ -25,6 +25,8 @@
       }
     },
     "priorityClassName": { "type": "string" },
+    "nodeSelector": { "type": "object", "additionalProperties": { "type": "string" } },
+    "tolerations": { "type": "array", "items": { "type": "object" } },
     "labels": { "type": "object", "additionalProperties": { "type": "string" } },
     "env": { "type": "array", "items": { "type": "object", "required": ["name"] } },
     "route": {

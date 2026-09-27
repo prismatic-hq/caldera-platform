@@ -15,7 +15,3 @@ spec:
         start: 0 7 * * 1-5
         end: 0 20 * * 1-5
         desiredReplicas: "2"
-    - type: kubernetes-workload
-      metadata:
-        podSelector: prismatic.dev/environment-kind=preview
-        value: "6"

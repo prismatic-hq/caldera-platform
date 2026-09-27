@@ -27,6 +27,11 @@ def _kubectl_context(target: Target) -> list[str]:
 PREVIEW_VALUES = (
     "environment.kind=preview",
     "priorityClassName=preview-environment",
+    "nodeSelector.karpenter\\.sh/nodepool=preview-environments",
+    "tolerations[0].key=prismatic.dev/preview",
+    "tolerations[0].operator=Equal",
+    "tolerations[0].value=true",
+    "tolerations[0].effect=NoSchedule",
     "routeLabels.prismatic\\.dev/exposure=preview",
 )
 

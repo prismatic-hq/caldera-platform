@@ -16,6 +16,8 @@ resources:
     memory: 256Mi
 
 priorityClassName: ""
+nodeSelector: {}
+tolerations: []
 labels: {}
 env: []
 
