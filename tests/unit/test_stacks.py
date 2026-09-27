@@ -240,6 +240,21 @@ def test_ci_roles_trust_only_push_events_of_one_repository(templates) -> None:
     ]
 
 
+def test_ci_access_outputs_each_service_push_role_arn(templates) -> None:
+    outputs = templates["CiAccess"].find_outputs("*")
+
+    assert {"TremorApiPushRoleArn", "StewardApiPushRoleArn"} <= outputs.keys()
+
+
+def test_push_roles_have_stable_names(templates) -> None:
+    names = {
+        role["Properties"].get("RoleName")
+        for role in resources(templates["CiAccess"], "AWS::IAM::Role").values()
+    }
+
+    assert {"caldera-github-push-tremor-api", "caldera-github-push-steward-api"} <= names
+
+
 def test_runners_get_ecr_push_through_pod_identity(templates) -> None:
     templates["CiAccess"].has_resource_properties(
         "AWS::EKS::PodIdentityAssociation",

@@ -1,4 +1,6 @@
-from aws_cdk import Stack
+import re
+
+from aws_cdk import CfnOutput, Stack
 from aws_cdk import aws_ecr as ecr
 from aws_cdk import aws_events as events
 from aws_cdk import aws_iam as iam
@@ -15,6 +17,10 @@ GITHUB_ISSUER = "token.actions.githubusercontent.com"
 RUNNER_NAMESPACE = "arc-runners"
 RUNNER_SERVICE_ACCOUNT = "arc-runner"
 EVENT_BUS = "prismatic-events"
+
+
+def push_role_output(repo: str) -> str:
+    return "".join(part.capitalize() for part in re.split(r"[^0-9A-Za-z]+", repo)) + "PushRoleArn"
 
 
 def _push_and_describe(role: iam.IGrantable, repositories: list[ecr.IRepository]) -> None:
@@ -49,12 +55,18 @@ class CiAccessStack(Stack):
         service_repositories = list(registry.service_repositories.values())
         self.push_roles = {}
         for service in config.registry.services:
-            role = self._github_role(f"Push-{service.repo}", service.repo, "ref:refs/heads/*")
+            role = self._github_role(
+                f"Push-{service.repo}",
+                service.repo,
+                "ref:refs/heads/*",
+                role_name=f"{config.cluster_name}-github-push-{service.repo}",
+            )
             _push_and_describe(
                 role, [registry.service_repositories[service.image], registry.build_cache]
             )
             self.bus.grant_put_events_to(role)
             self.push_roles[service.repo] = role
+            CfnOutput(self, push_role_output(service.repo), value=role.role_arn)
 
         self.golden_image_role = self._github_role(
             "GoldenImage", config.platform_repo, "ref:refs/heads/main"
@@ -94,11 +106,14 @@ class CiAccessStack(Stack):
             )
         )
 
-    def _github_role(self, construct_id: str, repo: str, subject: str) -> iam.Role:
+    def _github_role(
+        self, construct_id: str, repo: str, subject: str, *, role_name: str | None = None
+    ) -> iam.Role:
         """A role that only push events from one repository can assume (never fork PRs)."""
         return iam.Role(
             self,
             construct_id,
+            role_name=role_name,
             assumed_by=iam.WebIdentityPrincipal(
                 self.github.oidc_provider_arn,
                 conditions={
