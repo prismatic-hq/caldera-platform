@@ -56,6 +56,7 @@ python3 setup.py    # then, with mise on PATH: mise run test
 | `mise run destroy` | Destroy every stack, then `mise run verify:clean` |
 | `mise run local:up` / `mise run local:down` | kind cluster with Cilium, KEDA and `platform/` |
 | `uv run preview env up ... --dry-run` | Print the Helm command for a preview environment |
+| `uv run preview env test --name <env>` | Run the E2E Helm test hook; CI reports it as the `e2e` check |
 
 ## Deploy
 

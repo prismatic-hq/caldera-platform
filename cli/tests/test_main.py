@@ -151,6 +151,19 @@ def test_offline_up_without_every_sha_fails_clearly() -> None:
     assert "--offline needs --sha-for steward=<sha>" in output
 
 
+def test_down_reports_its_action_to_the_workflow(tmp_path: Path) -> None:
+    github_output = tmp_path / "output"
+
+    result = runner.invoke(
+        main.app,
+        ["env", "down", "--repo", "tremor-api", "--branch", "feature/x", "--offline", "--dry-run"],
+        env={"GITHUB_OUTPUT": str(github_output)},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert {"environment=x", "action=down"} <= set(github_output.read_text().splitlines())
+
+
 def test_down_dry_run_tears_down_when_no_branch_remains() -> None:
     code, output = invoke(
         "env",
@@ -309,6 +322,7 @@ def test_up_pins_digests_dataset_and_domain_from_aws(aws, tmp_path: Path) -> Non
     outputs = github_output.read_text().splitlines()
     assert "environment=quake-alerts" in outputs
     assert "exact-image=true" in outputs
+    assert "url=https://tremor-quake-alerts.preview.example.com" in outputs
     assert json.loads(next(o for o in outputs if o.startswith("result="))[7:]) == summary
 
 
