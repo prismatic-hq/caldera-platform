@@ -1,3 +1,7 @@
+import compileall
+from pathlib import Path
+
+from cdk.constructs.cleanup import HANDLERS_DIR
 from cdk.platform import build_platform
 
 EXPECTED_STACKS = [
@@ -31,3 +35,14 @@ def test_platform_synthesizes(new_app) -> None:
     assembly = app.synth()
 
     assert {stack.stack_name for stack in assembly.stacks} == set(EXPECTED_STACKS)
+
+
+def test_lambda_assets_leave_out_bytecode_caches(new_app, tmp_path: Path) -> None:
+    compileall.compile_dir(HANDLERS_DIR, quiet=1)
+    app = new_app(outdir=str(tmp_path))
+    build_platform(app)
+
+    app.synth()
+
+    assert list(tmp_path.glob("asset.*"))
+    assert not list(tmp_path.glob("asset.*/**/__pycache__"))
