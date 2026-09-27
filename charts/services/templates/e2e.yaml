@@ -1,0 +1,40 @@
+{{- if .Values.e2e.enabled }}
+{{- $e2e := .Values.e2e }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: e2e
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "services.labels" . | nindent 4 }}
+    app.kubernetes.io/name: e2e
+    app.kubernetes.io/component: e2e
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  restartPolicy: Never
+  activeDeadlineSeconds: {{ $e2e.timeoutSeconds }}
+  {{- with .Values.priorityClassName }}
+  priorityClassName: {{ . }}
+  {{- end }}
+  automountServiceAccountToken: false
+  securityContext:
+    {{- include "service.podSecurityContext" (dict "uid" 10001) | nindent 4 }}
+  containers:
+    - name: e2e
+      image: {{ include "service.imageReference" (dict "registry" .Values.image.registry "repository" $e2e.image.repository "tag" $e2e.image.tag) }}
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      env:
+        {{- include "services.urlEnv" . | nindent 8 }}
+      resources:
+        {{- toYaml $e2e.resources | nindent 8 }}
+      securityContext:
+        {{- include "service.containerSecurityContext" . | nindent 8 }}
+      volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+  volumes:
+    - name: tmp
+      emptyDir: {}
+{{- end }}

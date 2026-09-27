@@ -43,3 +43,10 @@ helm.sh/hook: {{ .events | default "pre-install,pre-upgrade" }}
 helm.sh/hook-weight: {{ .weight | quote }}
 helm.sh/hook-delete-policy: before-hook-creation
 {{- end -}}
+
+{{- define "services.urlEnv" -}}
+{{- range $name, $overrides := .Values.services }}
+- name: {{ printf "%s_URL" ($name | upper | replace "-" "_") }}
+  value: {{ printf "http://%s:%v" $name ($overrides.port | default $.Values.serviceDefaults.port) }}
+{{- end }}
+{{- end -}}
