@@ -12,3 +12,6 @@ cdk.out
 .rendered
 charts/*/charts/
 __snapshot__/
+
+# vhs recordings before GIF conversion
+docs/media/raw/

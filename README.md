@@ -14,6 +14,32 @@ Docs:
 - [GITHUB_APP.md](docs/GITHUB_APP.md): GitHub App for runners and service checkouts
 - [CLUSTER_ACCESS.md](docs/CLUSTER_ACCESS.md): `kubectl` access to the private EKS API
 
+## Demo
+
+Recorded against the live sandbox platform. Tapes to re-record them live in
+[docs/media/tapes](docs/media/tapes) (`vhs docs/media/tapes/<name>.tape`).
+
+**Deploy the platform**: `cdk deploy --all` on stacks already at head, so every stack reports no changes.
+
+![cdk deploy --all](docs/media/cdk-deploy.gif)
+
+**Push a feature branch**: a commit to `feature/quake-alerts` in tremor-api creates
+`preview-quake-alerts` with steward on `main`; the URL answered 166s after `git push`.
+
+![Commit, push and watch the preview namespace](docs/media/commit-push-namespace.gif)
+
+**Second environment and capacity**: `feature/tsunami` in steward-api, with headroom pods,
+NodeClaims and pending preview pods watched alongside; the URL answered 59s after `git push`.
+Recorded on a weekend, when the KEDA cron scales headroom to zero, so no preemption is shown.
+
+![Second preview environment with capacity watch](docs/media/capacity-watch.gif)
+
+**Isolation and reset**: an alert written in `quake-alerts` is absent from `tsunami`, a connection
+from `preview-tsunami` to `quake-alerts` Postgres is blocked while Hubble streams the policy
+drops, and `preview env reset` returns `quake-alerts` to golden data in 28.7s.
+
+![Isolation between preview environments and reset](docs/media/isolation-reset.gif)
+
 ## Layout
 
 | Path | Contents |
