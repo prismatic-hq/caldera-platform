@@ -1,0 +1,18 @@
+[project]
+name = "golden-seeder"
+version = "0.1.0"
+description = "Writes the fixed, deterministic dataset behind every golden snapshot"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest>=8.4"]
+
+[build-system]
+requires = ["uv_build>=0.12,<0.13"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

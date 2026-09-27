@@ -1,0 +1,49 @@
+version: "3"
+
+tasks:
+  init:
+    desc: Install dependencies and git hooks
+    cmds:
+      - uv sync --locked
+      - uv sync --locked --directory seeder
+      - uv run pre-commit install
+
+  lint:
+    desc: Lint and check formatting
+    cmds:
+      - uv run ruff check .
+      - uv run ruff format --check .
+
+  dev:
+    desc: List the CDK stacks and their dependencies
+    cmds:
+      - npx --yes aws-cdk@2 ls --show-dependencies
+
+  test:
+    desc: Run CDK and seeder tests, lint the chart and validate event contracts
+    cmds:
+      - uv run pytest
+      - uv run --directory seeder pytest
+      - helm lint charts/prismatic-service
+      - task: contracts
+
+  contracts:
+    desc: Validate event contract schemas and the registry
+    cmds:
+      - uv run check-jsonschema --check-metaschema contracts/events/*.schema.json
+      - uv run check-jsonschema --schemafile contracts/events/registry.v1.schema.json contracts/events/registry.v1.yaml
+
+  build:
+    desc: Synthesize CloudFormation templates into cdk.out
+    cmds:
+      - npx --yes aws-cdk@2 synth --quiet
+
+  up:
+    desc: Deploy all stacks (requires AWS credentials)
+    cmds:
+      - npx --yes aws-cdk@2 deploy --all
+
+  down:
+    desc: Destroy all stacks (requires AWS credentials)
+    cmds:
+      - npx --yes aws-cdk@2 destroy --all

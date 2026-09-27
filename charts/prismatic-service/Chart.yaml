@@ -1,0 +1,6 @@
+apiVersion: v2
+name: prismatic-service
+description: Shared chart for Prismatic HQ FastAPI services (Rollout, Service, HTTPRoute, migration Job)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

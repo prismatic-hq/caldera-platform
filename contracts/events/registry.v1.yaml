@@ -1,0 +1,131 @@
+version: 1
+typePrefix: com.prismatichq
+types:
+  - type: build.image.published.v1
+    owner: service-ci
+    producer: Service CI
+    consumers: [kargo-warehouse, audit]
+    subject: service/<name>
+    schema: data/build.image.published.v1.schema.json
+    delivery: at-least-once
+    status: planned
+  - type: vent.environment.requested.v1
+    owner: service-ci
+    producer: Service CI after applications-infra write
+    consumers: [vent-tracker, pr-commenter]
+    subject: vent/<name>
+    schema: data/vent.environment.requested.v1.schema.json
+    delivery: at-least-once
+    status: planned
+  - type: vent.environment.ready.v1
+    owner: caldera-platform
+    producer: Vent tracker sensor
+    consumers: [e2e-sensor, pr-commenter]
+    subject: vent/<name>
+    schema: data/vent.environment.ready.v1.schema.json
+    delivery: at-least-once
+    status: planned
+  - type: vent.environment.failed.v1
+    owner: caldera-platform
+    producer: Vent tracker sensor
+    consumers: [pr-commenter, alerting]
+    subject: vent/<name>
+    schema: data/vent.environment.failed.v1.schema.json
+    delivery: at-least-once
+    status: planned
+  - type: vent.environment.cooling.v1
+    owner: service-ci
+    producer: Service CI or vent sweeper
+    consumers: [audit]
+    subject: vent/<name>
+    schema: data/vent.environment.cooling.v1.schema.json
+    delivery: at-least-once
+    status: planned
+  - type: vent.environment.cooled.v1
+    owner: caldera-platform
+    producer: Vent tracker sensor
+    consumers: [orphan-sweep, audit]
+    subject: vent/<name>
+    schema: data/vent.environment.cooled.v1.schema.json
+    delivery: at-least-once
+    status: planned
+  - type: gitops.application.synced.v1
+    owner: caldera-platform
+    producer: Argo CD Notifications
+    consumers: [vent-tracker]
+    subject: application/<ns>/<name>
+    schema: data/gitops.application.synced.v1.schema.json
+    delivery: at-least-once
+    status: planned
+  - type: gitops.application.degraded.v1
+    owner: caldera-platform
+    producer: Argo CD Notifications
+    consumers: [vent-tracker, alerting]
+    subject: application/<ns>/<name>
+    schema: data/gitops.application.degraded.v1.schema.json
+    delivery: at-least-once
+    status: planned
+  - type: data.snapshot.built.v1
+    owner: caldera-platform
+    producer: Golden snapshot Workflow
+    consumers: [snapshot-pruner, audit]
+    subject: snapshot/<dataset-version>
+    schema: data/data.snapshot.built.v1.schema.json
+    delivery: at-least-once
+    status: planned
+  - type: data.snapshot.verification-failed.v1
+    owner: caldera-platform
+    producer: Golden snapshot Workflow
+    consumers: [alerting]
+    subject: snapshot/<dataset-version>
+    schema: data/data.snapshot.verification-failed.v1.schema.json
+    delivery: at-least-once
+    status: planned
+  - type: data.database.reset.v1
+    owner: caldera-platform
+    producer: E2E Workflow
+    consumers: [audit]
+    subject: vent/<name>
+    schema: data/data.database.reset.v1.schema.json
+    delivery: at-least-once
+    status: planned
+  - type: test.e2e.completed.v1
+    owner: caldera-platform
+    producer: E2E Workflow exit handler
+    consumers: [github-check-reporter, audit]
+    subject: vent/<name>
+    schema: data/test.e2e.completed.v1.schema.json
+    delivery: at-least-once
+    status: planned
+  - type: delivery.rollout.promoted.v1
+    owner: caldera-platform
+    producer: Argo Rollouts notifications
+    consumers: [kargo-verification, audit]
+    subject: rollout/<ns>/<name>
+    schema: data/delivery.rollout.promoted.v1.schema.json
+    delivery: at-least-once
+    status: planned
+  - type: delivery.rollout.aborted.v1
+    owner: caldera-platform
+    producer: Argo Rollouts notifications
+    consumers: [alerting, pr-commenter]
+    subject: rollout/<ns>/<name>
+    schema: data/delivery.rollout.aborted.v1.schema.json
+    delivery: at-least-once
+    status: planned
+  - type: delivery.analysis.failed.v1
+    owner: caldera-platform
+    producer: Argo Rollouts notifications
+    consumers: [alerting]
+    subject: analysisrun/<ns>/<name>
+    schema: data/delivery.analysis.failed.v1.schema.json
+    delivery: at-least-once
+    status: planned
+  - type: delivery.freight.promoted.v1
+    owner: caldera-platform
+    producer: Kargo promotion step webhook
+    consumers: [audit, release-notes]
+    subject: stage/<name>
+    schema: data/delivery.freight.promoted.v1.schema.json
+    delivery: at-least-once
+    status: planned

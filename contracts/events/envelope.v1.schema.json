@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/prismatic-hq/caldera-platform/contracts/events/envelope.v1.schema.json",
+  "title": "Prismatic platform CloudEvent envelope v1",
+  "description": "Narrowing profile of CloudEvents 1.0 structured JSON mode. Every platform event validates against this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "specversion",
+    "id",
+    "source",
+    "type",
+    "subject",
+    "time",
+    "datacontenttype",
+    "dataschema",
+    "environment",
+    "traceparent",
+    "correlationid",
+    "data"
+  ],
+  "properties": {
+    "specversion": { "const": "1.0" },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique per source; UUIDv4 by default. Idempotency key together with source."
+    },
+    "source": {
+      "type": "string",
+      "pattern": "^//prismatic-hq(/[a-z0-9][a-z0-9-]*)+$",
+      "examples": ["//prismatic-hq/tremor-api/ci", "//prismatic-hq/caldera/golden-seeder"]
+    },
+    "type": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+\\.[a-z][a-z0-9]*\\.[a-z][a-z0-9]*\\.[a-z][a-z0-9-]*\\.v[1-9][0-9]*$",
+      "description": "<reverse-domain>.<domain>.<entity>.<action>.v<N>; the suffix must be registered in registry.v1.yaml.",
+      "examples": ["com.prismatichq.vent.environment.ready.v1"]
+    },
+    "subject": {
+      "type": "string",
+      "pattern": "^(vent|service|snapshot|stage)/[a-z0-9][a-z0-9._-]*$|^(application|rollout|analysisrun)/[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9._-]*$"
+    },
+    "time": { "type": "string", "format": "date-time" },
+    "datacontenttype": { "const": "application/json" },
+    "dataschema": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://",
+      "description": "URL of the data schema at a pinned caldera-platform ref."
+    },
+    "environment": {
+      "type": "string",
+      "pattern": "^(dev|staging|prod|tenant-[a-z0-9-]+|vent-[a-z0-9-]+)$"
+    },
+    "traceparent": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"
+    },
+    "tracestate": { "type": "string" },
+    "correlationid": { "type": "string", "minLength": 1 },
+    "data": { "type": "object" }
+  }
+}
