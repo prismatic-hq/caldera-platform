@@ -21,7 +21,13 @@ def test_image_tag_uses_short_sha() -> None:
 def test_up_runs_helm_upgrade_install_into_the_environment_namespace() -> None:
     [command] = up_commands(PLAN, SERVICES, SHAS, "ds-42", Target(registry="123.dkr.ecr.aws"))
 
-    assert command[:5] == ["helm", "upgrade", "--install", "preview-quake-alerts", "charts/vent"]
+    assert command[:5] == [
+        "helm",
+        "upgrade",
+        "--install",
+        "preview-quake-alerts",
+        "charts/preview-environment",
+    ]
     assert "--create-namespace" in command
     assert "--wait" in command
     assert command[command.index("--namespace") + 1] == "preview-quake-alerts"
