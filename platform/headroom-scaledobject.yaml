@@ -1,0 +1,21 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: headroom
+  namespace: caldera-system
+spec:
+  scaleTargetRef:
+    name: headroom
+  minReplicaCount: 0
+  maxReplicaCount: 10
+  triggers:
+    - type: cron
+      metadata:
+        timezone: America/Chicago
+        start: 0 7 * * 1-5
+        end: 0 20 * * 1-5
+        desiredReplicas: "2"
+    - type: kubernetes-workload
+      metadata:
+        podSelector: app.kubernetes.io/part-of=vent
+        value: "6"

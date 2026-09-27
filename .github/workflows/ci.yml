@@ -99,12 +99,13 @@ jobs:
       - uses: azure/setup-helm@v5.0.1
         with:
           version: ${{ env.HELM_VERSION }}
-      - name: Render vent examples
+      - name: Render vent examples and platform manifests
         run: |
           mkdir -p rendered
           for values in charts/vent/ci/*-values.yaml; do
             name=$(basename "$values" .yaml)
             helm template "vent-$name" charts/vent -n "vent-$name" -f "$values" > "rendered/$name.yaml"
           done
+          cp platform/*.yaml rendered/
       - run: docker run --rm -v "$PWD/rendered:/r" "$KUBECONFORM_IMAGE" -strict -summary -ignore-missing-schemas /r
       - run: docker run --rm -v "$PWD/rendered:/r" "$TRIVY_IMAGE" config --exit-code 1 /r

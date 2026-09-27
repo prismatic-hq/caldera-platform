@@ -1,0 +1,2 @@
+# Stub: syncs service code into running vent pods on kind (REQUIREMENTS.md FR-10.3).
+allow_k8s_contexts('kind-caldera')
