@@ -2,166 +2,228 @@ import pytest
 
 from caldera_cli.resolver import (
     Action,
-    Service,
     VentNameError,
     VentPlan,
     resolve_delete,
     resolve_push,
 )
 
-TREMOR, STEWARD = Service.TREMOR, Service.STEWARD
+TWO = ("tremor", "steward")
+THREE = ("tremor", "steward", "magma")
 
 
 @pytest.mark.parametrize(
-    ("service", "branch", "other_has_branch", "existing", "expected"),
+    ("services", "pushed", "branch", "sharing", "existing", "expected"),
     [
         pytest.param(
-            TREMOR,
+            TWO,
+            "tremor",
             "feature/quake-alerts",
-            False,
             set(),
-            VentPlan("quake-alerts", Action.UP, {TREMOR: "feature/quake-alerts", STEWARD: "main"}),
+            set(),
+            VentPlan(
+                "quake-alerts", Action.UP, {"tremor": "feature/quake-alerts", "steward": "main"}
+            ),
             id="A: feature branch in tremor only",
         ),
         pytest.param(
-            STEWARD,
+            TWO,
+            "steward",
             "fix-crew-sync",
-            False,
+            set(),
             set(),
             VentPlan(
-                "steward-fix-crew-sync", Action.UP, {STEWARD: "fix-crew-sync", TREMOR: "main"}
+                "steward-fix-crew-sync", Action.UP, {"tremor": "main", "steward": "fix-crew-sync"}
             ),
             id="B: other branch in steward only",
         ),
         pytest.param(
-            TREMOR,
+            TWO,
+            "tremor",
             "feature/quake-alerts",
-            True,
+            {"steward"},
             set(),
             VentPlan(
                 "quake-alerts",
                 Action.UP,
-                {TREMOR: "feature/quake-alerts", STEWARD: "feature/quake-alerts"},
+                {"tremor": "feature/quake-alerts", "steward": "feature/quake-alerts"},
             ),
             id="C1: same feature branch in both repos",
         ),
         pytest.param(
-            STEWARD,
+            TWO,
+            "steward",
             "feature/quake-alerts",
-            True,
+            {"tremor"},
             {"quake-alerts"},
             VentPlan(
                 "quake-alerts",
                 Action.UP,
-                {STEWARD: "feature/quake-alerts", TREMOR: "feature/quake-alerts"},
+                {"tremor": "feature/quake-alerts", "steward": "feature/quake-alerts"},
                 joins_existing=True,
             ),
             id="C1: second push joins the existing vent",
         ),
         pytest.param(
-            TREMOR,
+            TWO,
+            "tremor",
             "feature/tsunami",
-            False,
+            set(),
             {"lava-flow"},
-            VentPlan("tsunami", Action.UP, {TREMOR: "feature/tsunami", STEWARD: "main"}),
+            VentPlan("tsunami", Action.UP, {"tremor": "feature/tsunami", "steward": "main"}),
             id="C2: tremor feature/tsunami",
         ),
         pytest.param(
-            STEWARD,
+            TWO,
+            "steward",
             "feature/lava-flow",
-            False,
+            set(),
             {"tsunami"},
-            VentPlan("lava-flow", Action.UP, {STEWARD: "feature/lava-flow", TREMOR: "main"}),
+            VentPlan("lava-flow", Action.UP, {"tremor": "main", "steward": "feature/lava-flow"}),
             id="C2: steward feature/lava-flow",
         ),
         pytest.param(
-            TREMOR,
+            TWO,
+            "tremor",
             "Bugfix/Sensor_Drift",
-            True,
+            {"steward"},
             set(),
             VentPlan(
                 "tremor-bugfix-sensor-drift",
                 Action.UP,
-                {TREMOR: "Bugfix/Sensor_Drift", STEWARD: "main"},
+                {"tremor": "Bugfix/Sensor_Drift", "steward": "main"},
             ),
             id="non-feature branch is slugged and never shared",
+        ),
+        pytest.param(
+            THREE,
+            "magma",
+            "feature/quake-alerts",
+            {"tremor"},
+            set(),
+            VentPlan(
+                "quake-alerts",
+                Action.UP,
+                {
+                    "tremor": "feature/quake-alerts",
+                    "steward": "main",
+                    "magma": "feature/quake-alerts",
+                },
+            ),
+            id="three services: shares with every repo that has the branch",
         ),
     ],
 )
 def test_resolve_push(
-    service: Service, branch: str, other_has_branch: bool, existing: set[str], expected: VentPlan
+    services: tuple[str, ...],
+    pushed: str,
+    branch: str,
+    sharing: set[str],
+    existing: set[str],
+    expected: VentPlan,
 ) -> None:
-    assert resolve_push(service, branch, other_has_branch, frozenset(existing)) == expected
+    plan = resolve_push(services, pushed, branch, frozenset(sharing), frozenset(existing))
+
+    assert plan == expected
 
 
 @pytest.mark.parametrize(
-    ("service", "branch", "other_has_branch", "expected"),
+    ("services", "deleted", "branch", "sharing", "expected"),
     [
         pytest.param(
-            TREMOR,
+            TWO,
+            "tremor",
             "feature/quake-alerts",
-            True,
+            {"steward"},
             VentPlan(
                 "quake-alerts",
                 Action.UP,
-                {TREMOR: "main", STEWARD: "feature/quake-alerts"},
+                {"tremor": "main", "steward": "feature/quake-alerts"},
                 joins_existing=True,
             ),
             id="feature deleted, other repo keeps it: redeploy with deleted service on main",
         ),
         pytest.param(
-            TREMOR,
+            TWO,
+            "tremor",
             "feature/quake-alerts",
-            False,
+            set(),
             VentPlan("quake-alerts", Action.DOWN),
             id="feature deleted, no branch left: cool",
         ),
         pytest.param(
-            STEWARD,
+            TWO,
+            "steward",
             "fix-crew-sync",
-            True,
+            {"tremor"},
             VentPlan("steward-fix-crew-sync", Action.DOWN),
             id="non-feature branch deleted: cool",
+        ),
+        pytest.param(
+            THREE,
+            "tremor",
+            "feature/quake-alerts",
+            {"magma"},
+            VentPlan(
+                "quake-alerts",
+                Action.UP,
+                {
+                    "tremor": "main",
+                    "steward": "main",
+                    "magma": "feature/quake-alerts",
+                },
+                joins_existing=True,
+            ),
+            id="three services: keep the vent while any repo has the branch",
+        ),
+        pytest.param(
+            TWO,
+            "tremor",
+            "feature/quake-alerts",
+            {"tremor"},
+            VentPlan("quake-alerts", Action.DOWN),
+            id="deleted repo listed as sharing is ignored",
         ),
     ],
 )
 def test_resolve_delete(
-    service: Service, branch: str, other_has_branch: bool, expected: VentPlan
+    services: tuple[str, ...], deleted: str, branch: str, sharing: set[str], expected: VentPlan
 ) -> None:
-    assert resolve_delete(service, branch, other_has_branch) == expected
+    assert resolve_delete(services, deleted, branch, frozenset(sharing)) == expected
 
 
 @pytest.mark.parametrize(
-    ("service", "branch", "message"),
+    ("services", "pushed", "branch", "message"),
     [
-        pytest.param(TREMOR, "feature/" + "a" * 56, "DNS allows 63", id="hostname label over 63"),
-        pytest.param(STEWARD, "x" * 60, "DNS allows 63", id="prefixed name over 63"),
-        pytest.param(TREMOR, "feature/" + "a" * 49, "Helm allows 53", id="release over 53"),
-        pytest.param(TREMOR, "main", "baseline", id="main"),
-        pytest.param(TREMOR, "feature/---", "not a valid DNS label", id="empty slug"),
+        pytest.param(
+            TWO, "tremor", "feature/" + "a" * 56, "DNS allows 63", id="hostname label over 63"
+        ),
+        pytest.param(TWO, "steward", "x" * 60, "DNS allows 63", id="prefixed name over 63"),
+        pytest.param(TWO, "tremor", "feature/" + "a" * 49, "Helm allows 53", id="release over 53"),
+        pytest.param(
+            ("tremor", "a-very-long-service-name"),
+            "tremor",
+            "feature/" + "a" * 40,
+            "DNS allows 63",
+            id="longest service name sets the limit",
+        ),
+        pytest.param(TWO, "tremor", "main", "baseline", id="main"),
+        pytest.param(TWO, "tremor", "feature/---", "not a valid DNS label", id="empty slug"),
+        pytest.param(TWO, "magma", "feature/x", "unknown service 'magma'", id="unknown service"),
     ],
 )
-def test_invalid_vent_names_fail_with_clear_error(
-    service: Service, branch: str, message: str
+def test_invalid_plans_fail_with_clear_error(
+    services: tuple[str, ...], pushed: str, branch: str, message: str
 ) -> None:
-    with pytest.raises(VentNameError, match=message):
-        resolve_push(service, branch, other_has_branch=False)
+    with pytest.raises(ValueError, match=message):
+        resolve_push(services, pushed, branch, frozenset())
+
+
+def test_vent_name_errors_are_value_errors() -> None:
+    assert issubclass(VentNameError, ValueError)
 
 
 def test_longest_valid_name_fits_every_dns_label() -> None:
-    plan = resolve_push(STEWARD, "feature/" + "a" * 48, other_has_branch=False)
+    plan = resolve_push(TWO, "steward", "feature/" + "a" * 48, frozenset())
 
-    assert all(len(f"{service}-{plan.vent}") <= 63 for service in Service)
-
-
-@pytest.mark.parametrize(
-    ("repo", "expected"),
-    [("tremor-api", TREMOR), ("prismatic-hq/steward-api", STEWARD), ("steward", STEWARD)],
-)
-def test_service_from_repo(repo: str, expected: Service) -> None:
-    assert Service.from_repo(repo) is expected
-
-
-def test_unknown_repo_is_rejected() -> None:
-    with pytest.raises(ValueError, match="unknown service repo"):
-        Service.from_repo("caldera-platform")
+    assert all(len(f"{service}-{plan.vent}") <= 63 for service in TWO)

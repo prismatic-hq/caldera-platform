@@ -15,7 +15,7 @@ Docs: [REQUIREMENTS.md](docs/REQUIREMENTS.md), [ARCHITECTURE.md](docs/ARCHITECTU
 | Path | Contents |
 |---|---|
 | `caldera/` | CDK stacks and cdk-nag suppressions (`nag_suppressions.py`) |
-| `cli/` | `caldera vent resolve\|up\|down\|reset` |
+| `cli/`, `services.yaml` | `caldera vent resolve\|up\|down\|reset` and the service registry it reads |
 | `charts/vent/` | Helm chart for one vent |
 | `platform/` | PriorityClasses, headroom Deployment, KEDA `ScaledObject` |
 | `seeder/`, `images/golden-db/` | Golden dataset and golden DB image |

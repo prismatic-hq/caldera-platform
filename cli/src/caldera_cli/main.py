@@ -2,15 +2,16 @@ import json
 import os
 import shlex
 import subprocess
+from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from caldera_cli.commands import Command, Target, down_commands, reset_commands, up_commands
 from caldera_cli.github import GitHub
+from caldera_cli.registry import ServiceRegistry
 from caldera_cli.resolver import (
     Action,
-    Service,
     VentPlan,
     feature_name,
     resolve_delete,
@@ -24,15 +25,23 @@ app.add_typer(vent_app, name="vent")
 
 RepoOption = Annotated[str, typer.Option("--repo", help="Service repo, e.g. tremor-api")]
 BranchOption = Annotated[str, typer.Option("--branch")]
-OtherHasBranch = Annotated[
-    bool | None,
+BranchInOption = Annotated[
+    list[str] | None,
     typer.Option(
-        "--other-has-branch/--other-missing-branch",
-        help="Skip the GitHub lookup for the same branch in the other repo",
+        "--branch-in",
+        help="Service whose repo also has this branch (repeatable); skips the GitHub lookup",
     ),
 ]
-OtherShaOption = Annotated[
-    str | None, typer.Option("--other-sha", help="Commit of the other service's ref")
+OfflineOption = Annotated[
+    bool, typer.Option("--offline", help="Make no GitHub calls; pass --branch-in and --sha-for")
+]
+ShaForOption = Annotated[
+    list[str] | None,
+    typer.Option("--sha-for", help="SERVICE=SHA commit to deploy for a service (repeatable)"),
+]
+ServicesFileOption = Annotated[
+    Path,
+    typer.Option("--services-file", envvar="CALDERA_SERVICES_FILE", help="Service registry"),
 ]
 DryRun = Annotated[bool, typer.Option("--dry-run", help="Print commands without running them")]
 ContextOption = Annotated[str | None, typer.Option("--context", help="kubeconfig context")]
@@ -41,16 +50,56 @@ RegistryOption = Annotated[
     str | None, typer.Option("--registry", envvar="CALDERA_REGISTRY", help="ECR registry host")
 ]
 DatasetOption = Annotated[str, typer.Option("--dataset-version", envvar="CALDERA_DATASET_VERSION")]
+DEFAULT_SERVICES_FILE = Path("services.yaml")
 
 
 def _github() -> GitHub:
     return GitHub(os.getenv("GITHUB_TOKEN"))
 
 
-def _other_has_branch(service: Service, branch: str, given: bool | None) -> bool:
-    if given is not None or feature_name(branch) is None:
-        return bool(given)
-    return _github().branch_exists(service.other.repo, branch)
+def _or_exit(function, *args):
+    try:
+        return function(*args)
+    except (ValueError, OSError) as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(code=2) from error
+
+
+def _sharing(
+    services: ServiceRegistry, pushed: str, branch: str, branch_in: list[str], offline: bool
+) -> frozenset[str]:
+    if feature_name(branch) is None:
+        return frozenset()
+    if branch_in or offline:
+        return frozenset(services.get(name).name for name in branch_in)
+    github = _github()
+    return frozenset(
+        service.name
+        for service in services.services
+        if service.name != pushed and github.branch_exists(service.repo, branch)
+    )
+
+
+def _parse_shas(values: list[str]) -> dict[str, str]:
+    shas = {}
+    for value in values:
+        name, separator, sha = value.partition("=")
+        if not separator or not name or not sha:
+            raise ValueError(f"--sha-for expects SERVICE=SHA, got {value!r}")
+        shas[name] = sha
+    return shas
+
+
+def _shas(
+    services: ServiceRegistry, plan: VentPlan, known: dict[str, str], offline: bool
+) -> dict[str, str]:
+    shas = {}
+    for service in services.services:
+        sha = known.get(service.name)
+        if not sha and offline:
+            raise ValueError(f"--offline needs --sha-for {service.name}=<sha>")
+        shas[service.name] = sha or _github().head_sha(service.repo, plan.refs[service.name])
+    return shas
 
 
 def _existing_vents(target: Target, dry_run: bool) -> frozenset[str]:
@@ -71,13 +120,6 @@ def _existing_vents(target: Target, dry_run: bool) -> frozenset[str]:
     return frozenset(name.removeprefix("vent-") for name in names)
 
 
-def _shas(plan: VentPlan, known: dict[Service, str | None]) -> dict[Service, str]:
-    return {
-        service: known.get(service) or _github().head_sha(service.repo, plan.refs[service])
-        for service in Service
-    }
-
-
 def _run(commands: list[Command], dry_run: bool) -> None:
     for command in commands:
         typer.echo(shlex.join(command))
@@ -91,29 +133,27 @@ def _plan_json(plan: VentPlan) -> str:
             "vent": plan.vent,
             "release": plan.release,
             "action": plan.action,
-            "refs": {str(service): ref for service, ref in plan.refs.items()},
+            "refs": plan.refs,
             "joins_existing": plan.joins_existing,
         },
         sort_keys=True,
     )
 
 
-def _resolve_or_exit(function, *args):
-    try:
-        return function(*args)
-    except ValueError as error:
-        typer.echo(f"error: {error}", err=True)
-        raise typer.Exit(code=2) from error
-
-
 @vent_app.command()
 def resolve(
-    repo: RepoOption, branch: BranchOption, other_has_branch: OtherHasBranch = None
+    repo: RepoOption,
+    branch: BranchOption,
+    branch_in: BranchInOption = None,
+    offline: OfflineOption = False,
+    services_file: ServicesFileOption = DEFAULT_SERVICES_FILE,
 ) -> None:
     """Print the vent plan for a push as JSON."""
-    service = _resolve_or_exit(Service.from_repo, repo)
-    has_branch = _other_has_branch(service, branch, other_has_branch)
-    typer.echo(_plan_json(_resolve_or_exit(resolve_push, service, branch, has_branch)))
+    services = _or_exit(ServiceRegistry.load, services_file)
+    pushed = _or_exit(services.by_repo, repo).name
+    sharing = _or_exit(_sharing, services, pushed, branch, branch_in or [], offline)
+    plan = _or_exit(resolve_push, services.names, pushed, branch, sharing)
+    typer.echo(_plan_json(plan))
 
 
 @vent_app.command()
@@ -122,8 +162,10 @@ def up(
     branch: BranchOption,
     sha: Annotated[str, typer.Option("--sha", help="Pushed commit")],
     dataset_version: DatasetOption = "latest",
-    other_has_branch: OtherHasBranch = None,
-    other_sha: OtherShaOption = None,
+    branch_in: BranchInOption = None,
+    offline: OfflineOption = False,
+    sha_for: ShaForOption = None,
+    services_file: ServicesFileOption = DEFAULT_SERVICES_FILE,
     context: ContextOption = None,
     chart: ChartOption = "charts/vent",
     registry: RegistryOption = None,
@@ -131,13 +173,14 @@ def up(
 ) -> None:
     """Create or update the vent for a pushed branch."""
     target = Target(chart=chart, context=context, registry=registry)
-    service = _resolve_or_exit(Service.from_repo, repo)
-    has_branch = _other_has_branch(service, branch, other_has_branch)
-    plan = _resolve_or_exit(
-        resolve_push, service, branch, has_branch, _existing_vents(target, dry_run)
-    )
-    shas = _shas(plan, {service: sha, service.other: other_sha})
-    _run(up_commands(plan, shas, dataset_version, target), dry_run)
+    services = _or_exit(ServiceRegistry.load, services_file)
+    pushed = _or_exit(services.by_repo, repo).name
+    sharing = _or_exit(_sharing, services, pushed, branch, branch_in or [], offline)
+    existing = _existing_vents(target, dry_run)
+    plan = _or_exit(resolve_push, services.names, pushed, branch, sharing, existing)
+    known = {**_or_exit(_parse_shas, sha_for or []), pushed: sha}
+    shas = _or_exit(_shas, services, plan, known, offline)
+    _run(up_commands(plan, services.services, shas, dataset_version, target), dry_run)
 
 
 @vent_app.command()
@@ -145,34 +188,36 @@ def down(
     repo: RepoOption,
     branch: BranchOption,
     dataset_version: DatasetOption = "latest",
-    other_has_branch: OtherHasBranch = None,
-    main_sha: Annotated[
-        str | None, typer.Option("--main-sha", help="Commit of main in the deleted branch's repo")
-    ] = None,
-    other_sha: OtherShaOption = None,
+    branch_in: BranchInOption = None,
+    offline: OfflineOption = False,
+    sha_for: ShaForOption = None,
+    services_file: ServicesFileOption = DEFAULT_SERVICES_FILE,
     context: ContextOption = None,
     chart: ChartOption = "charts/vent",
     registry: RegistryOption = None,
     dry_run: DryRun = False,
 ) -> None:
-    """Cool the vent for a deleted branch, or redeploy it on main if the other repo keeps it."""
+    """Cool the vent for a deleted branch, or redeploy it while another repo keeps the branch."""
     target = Target(chart=chart, context=context, registry=registry)
-    service = _resolve_or_exit(Service.from_repo, repo)
-    has_branch = _other_has_branch(service, branch, other_has_branch)
-    plan = _resolve_or_exit(resolve_delete, service, branch, has_branch)
+    services = _or_exit(ServiceRegistry.load, services_file)
+    deleted = _or_exit(services.by_repo, repo).name
+    sharing = _or_exit(_sharing, services, deleted, branch, branch_in or [], offline)
+    plan = _or_exit(resolve_delete, services.names, deleted, branch, sharing)
     if plan.action is Action.DOWN:
         _run(down_commands(plan.vent, target), dry_run)
         return
-    shas = _shas(plan, {service: main_sha, service.other: other_sha})
-    _run(up_commands(plan, shas, dataset_version, target), dry_run)
+    shas = _or_exit(_shas, services, plan, _or_exit(_parse_shas, sha_for or []), offline)
+    _run(up_commands(plan, services.services, shas, dataset_version, target), dry_run)
 
 
 @vent_app.command()
 def reset(
     vent: Annotated[str, typer.Option("--vent")],
+    services_file: ServicesFileOption = DEFAULT_SERVICES_FILE,
     context: ContextOption = None,
     dry_run: DryRun = False,
 ) -> None:
     """Restart the vent database to return it to golden data."""
-    _resolve_or_exit(validate_vent_name, vent)
+    services = _or_exit(ServiceRegistry.load, services_file)
+    _or_exit(validate_vent_name, vent, services.names)
     _run(reset_commands(vent, Target(context=context)), dry_run)

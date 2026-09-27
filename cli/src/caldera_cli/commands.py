@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
-from caldera_cli.resolver import Service, VentPlan
+from caldera_cli.registry import ServiceSpec
+from caldera_cli.resolver import VentPlan
 
 Command = list[str]
 
@@ -26,13 +27,23 @@ def image_tag(sha: str) -> str:
 
 
 def up_commands(
-    plan: VentPlan, shas: dict[Service, str], dataset_version: str, target: Target
+    plan: VentPlan,
+    services: tuple[ServiceSpec, ...],
+    shas: dict[str, str],
+    dataset_version: str,
+    target: Target,
 ) -> list[Command]:
     namespace = plan.release
-    values = [f"vent.name={plan.vent}", f"datasetVersion={dataset_version}"]
-    values += [f"services.{service}.image.tag={image_tag(shas[service])}" for service in Service]
+    strings = [f"vent.name={plan.vent}", f"datasetVersion={dataset_version}"]
+    numbers = []
+    for service in services:
+        strings += [
+            f"services.{service.name}.image.repository={service.image}",
+            f"services.{service.name}.image.tag={image_tag(shas[service.name])}",
+        ]
+        numbers.append(f"services.{service.name}.port={service.port}")
     if target.registry:
-        values.append(f"image.registry={target.registry}")
+        strings.append(f"image.registry={target.registry}")
     command = [
         "helm",
         "upgrade",
@@ -46,8 +57,10 @@ def up_commands(
         "--timeout",
         target.timeout,
     ]
-    for value in values:
+    for value in strings:
         command += ["--set-string", value]
+    for value in numbers:
+        command += ["--set", value]
     return [command + _helm_context(target)]
 
 
