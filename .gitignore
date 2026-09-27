@@ -9,3 +9,4 @@ __pycache__
 cdk.out
 .env
 .ruff_cache
+.rendered

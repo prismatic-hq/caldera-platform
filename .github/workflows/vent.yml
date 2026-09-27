@@ -1,0 +1,76 @@
+name: vent
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        description: Service repo that was pushed (tremor-api or steward-api)
+        type: string
+        required: true
+      branch:
+        type: string
+        required: true
+      sha:
+        type: string
+        required: true
+      platform-ref:
+        description: caldera-platform ref that provides the CLI and chart
+        type: string
+        default: main
+    secrets:
+      CALDERA_TOKEN:
+        description: Token that can read caldera-platform and both service repos
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      vent: ${{ steps.plan.outputs.vent }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.CALDERA_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: prismatic-hq/caldera-platform
+          ref: ${{ inputs.platform-ref }}
+          token: ${{ secrets.CALDERA_TOKEN || github.token }}
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - id: plan
+        env:
+          REPO: ${{ inputs.repo }}
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          plan=$(uv run caldera vent resolve --repo "$REPO" --branch "$BRANCH")
+          echo "$plan"
+          echo "vent=$(jq -r .vent <<<"$plan")" >> "$GITHUB_OUTPUT"
+
+  up:
+    needs: resolve
+    runs-on: ubuntu-latest
+    concurrency:
+      group: vent-${{ needs.resolve.outputs.vent }}
+      cancel-in-progress: true
+    env:
+      GITHUB_TOKEN: ${{ secrets.CALDERA_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: prismatic-hq/caldera-platform
+          ref: ${{ inputs.platform-ref }}
+          token: ${{ secrets.CALDERA_TOKEN || github.token }}
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - env:
+          REPO: ${{ inputs.repo }}
+          BRANCH: ${{ inputs.branch }}
+          SHA: ${{ inputs.sha }}
+        run: uv run caldera vent up --repo "$REPO" --branch "$BRANCH" --sha "$SHA" --dry-run

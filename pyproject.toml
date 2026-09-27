@@ -1,7 +1,7 @@
 [project]
 name = "caldera-platform"
 version = "0.1.0"
-description = "AWS CDK app and GitOps platform for Prismatic HQ"
+description = "AWS CDK EKS platform and vent tooling for Prismatic HQ preview environments"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -10,6 +10,7 @@ dependencies = [
     "caldera-cli",
     "constructs>=10.5.0,<11.0.0",
     "golden-seeder",
+    "boto3>=1.43",
 ]
 
 [dependency-groups]
