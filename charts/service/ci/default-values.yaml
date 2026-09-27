@@ -1,0 +1,4 @@
+name: tremor
+image:
+  repository: tremor-api
+  tag: main

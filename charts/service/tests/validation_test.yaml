@@ -1,0 +1,33 @@
+suite: service validation
+templates:
+  - templates/service.yaml
+values:
+  - ../ci/default-values.yaml
+tests:
+  - it: fails on a name that is not a DNS label
+    set:
+      name: Tremor_API
+    asserts:
+      - failedTemplate:
+          errorPattern: invalid service name "Tremor_API"
+  - it: fails without an image tag
+    set:
+      image.tag: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: image.tag is required
+  - it: fails when the route has no hostname
+    set:
+      route.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: route.hostname is required
+  - it: fails when the hostname label exceeds 63 characters
+    set:
+      route.enabled: true
+      route.hostname: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.preview.example.com
+      route.gateway.name: preview
+      route.gateway.namespace: envoy-gateway-system
+    asserts:
+      - failedTemplate:
+          errorPattern: hostname label too long

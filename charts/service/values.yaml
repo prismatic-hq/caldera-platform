@@ -1,0 +1,29 @@
+name: ""
+
+image:
+  registry: ""
+  repository: ""
+  tag: ""
+  pullPolicy: IfNotPresent
+
+port: 8000
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+priorityClassName: ""
+labels: {}
+env: []
+
+route:
+  enabled: false
+  hostname: ""
+  labels: {}
+  gateway:
+    name: ""
+    namespace: ""
+    sectionName: ""
