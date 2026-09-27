@@ -34,6 +34,12 @@ Recorded on a weekend, when the KEDA cron scales headroom to zero, so no preempt
 
 ![Second preview environment with capacity watch](docs/media/capacity-watch.gif)
 
+**Isolation and reset**: an alert written in `quake-alerts` is absent from `tsunami`, a connection
+from `preview-tsunami` to `quake-alerts` Postgres is blocked while Hubble streams the policy
+drops, and `preview env reset` returns `quake-alerts` to golden data in 28.7s.
+
+![Isolation between preview environments and reset](docs/media/isolation-reset.gif)
+
 ## Layout
 
 | Path | Contents |
