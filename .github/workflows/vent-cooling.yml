@@ -42,7 +42,7 @@ jobs:
           REPO: ${{ inputs.repo }}
           BRANCH: ${{ inputs.branch }}
         run: |
-          plan=$(uv run caldera vent resolve --repo "$REPO" --branch "$BRANCH" --other-missing-branch)
+          plan=$(uv run caldera vent resolve --repo "$REPO" --branch "$BRANCH" --offline)
           echo "vent=$(jq -r .vent <<<"$plan")" >> "$GITHUB_OUTPUT"
 
   down:

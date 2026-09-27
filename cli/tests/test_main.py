@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -6,6 +7,7 @@ from typer.testing import CliRunner
 from caldera_cli import main
 
 runner = CliRunner()
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture(autouse=True)
@@ -15,6 +17,7 @@ def no_external_calls(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(main.subprocess, "run", fail)
     monkeypatch.setattr(main, "_github", fail)
+    monkeypatch.chdir(REPO_ROOT)
 
 
 def invoke(*args: str) -> tuple[int, str]:
@@ -30,7 +33,8 @@ def test_resolve_prints_plan_as_json() -> None:
         "tremor-api",
         "--branch",
         "feature/quake-alerts",
-        "--other-has-branch",
+        "--branch-in",
+        "steward",
     )
 
     assert code == 0
@@ -50,6 +54,30 @@ def test_resolve_skips_lookup_for_non_feature_branches() -> None:
     assert json.loads(output)["vent"] == "steward-fix-crew-sync"
 
 
+def test_resolve_reads_a_custom_registry(tmp_path: Path) -> None:
+    services = tmp_path / "services.yaml"
+    services.write_text(
+        "services:\n"
+        "  - {name: tremor, repo: tremor-api, image: tremor-api}\n"
+        "  - {name: magma, repo: magma-api, image: magma-api}\n"
+    )
+
+    code, output = invoke(
+        "vent",
+        "resolve",
+        "--repo",
+        "magma-api",
+        "--branch",
+        "feature/x",
+        "--offline",
+        "--services-file",
+        str(services),
+    )
+
+    assert code == 0
+    assert json.loads(output)["refs"] == {"tremor": "main", "magma": "feature/x"}
+
+
 def test_up_dry_run_prints_helm_command() -> None:
     code, output = invoke(
         "vent",
@@ -60,15 +88,33 @@ def test_up_dry_run_prints_helm_command() -> None:
         "feature/quake-alerts",
         "--sha",
         "a1b2c3d4",
-        "--other-missing-branch",
-        "--other-sha",
-        "0f9e8d7c",
+        "--offline",
+        "--sha-for",
+        "steward=0f9e8d7c",
         "--dry-run",
     )
 
     assert code == 0
     assert output.startswith("helm upgrade --install vent-quake-alerts charts/vent")
     assert "services.steward.image.tag=sha-0f9e8d7" in output
+
+
+def test_offline_up_without_every_sha_fails_clearly() -> None:
+    code, output = invoke(
+        "vent",
+        "up",
+        "--repo",
+        "tremor-api",
+        "--branch",
+        "feature/quake-alerts",
+        "--sha",
+        "a1b2c3d4",
+        "--offline",
+        "--dry-run",
+    )
+
+    assert code == 2
+    assert "--offline needs --sha-for steward=<sha>" in output
 
 
 def test_down_dry_run_cools_vent_when_no_branch_remains() -> None:
@@ -79,7 +125,7 @@ def test_down_dry_run_cools_vent_when_no_branch_remains() -> None:
         "tremor-api",
         "--branch",
         "feature/quake-alerts",
-        "--other-missing-branch",
+        "--offline",
         "--dry-run",
     )
 
@@ -90,7 +136,7 @@ def test_down_dry_run_cools_vent_when_no_branch_remains() -> None:
     ]
 
 
-def test_down_dry_run_redeploys_on_main_when_other_repo_keeps_branch() -> None:
+def test_down_dry_run_redeploys_on_main_when_another_repo_keeps_branch() -> None:
     code, output = invoke(
         "vent",
         "down",
@@ -98,11 +144,13 @@ def test_down_dry_run_redeploys_on_main_when_other_repo_keeps_branch() -> None:
         "steward-api",
         "--branch",
         "feature/quake-alerts",
-        "--other-has-branch",
-        "--main-sha",
-        "1111111aaa",
-        "--other-sha",
-        "2222222bbb",
+        "--branch-in",
+        "tremor",
+        "--offline",
+        "--sha-for",
+        "steward=1111111aaa",
+        "--sha-for",
+        "tremor=2222222bbb",
         "--dry-run",
     )
 
@@ -118,16 +166,16 @@ def test_reset_dry_run() -> None:
     assert "kubectl rollout restart deployment/postgres --namespace vent-quake-alerts" in output
 
 
-def test_too_long_vent_name_exits_with_clear_error() -> None:
-    code, output = invoke(
-        "vent",
-        "resolve",
-        "--repo",
-        "tremor-api",
-        "--branch",
-        "feature/" + "a" * 60,
-        "--other-missing-branch",
-    )
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (("--branch", "feature/" + "a" * 60), "DNS allows 63"),
+        (("--branch", "feature/x", "--branch-in", "magma"), "unknown service 'magma'"),
+        (("--branch", "feature/x", "--services-file", "missing.yaml"), "missing.yaml"),
+    ],
+)
+def test_invalid_input_exits_with_clear_error(args: tuple[str, ...], message: str) -> None:
+    code, output = invoke("vent", "resolve", "--repo", "tremor-api", "--offline", *args)
 
     assert code == 2
-    assert "DNS allows 63" in output
+    assert message in output
