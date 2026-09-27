@@ -28,7 +28,9 @@ Requirements and decisions live in [REQUIREMENTS.md](REQUIREMENTS.md). This page
 
 1. `cdk deploy --all` provisions `NetworkStack`, `ClusterStack` (EKS, Cilium in ENI mode,
    Karpenter), `RegistryStack`, `DnsStack`, `CiAccessStack` and `AddonsStack`. cdk-nag
-   `AwsSolutionsChecks` fails the synth on any unacknowledged finding.
+   `AwsSolutionsChecks` fails the synth on any unacknowledged finding. On `cdk destroy`, the
+   drainer (`AddonsStack`) removes NodePools, the Gateway and preview namespaces while the
+   controllers still run; the sweepers (`NetworkStack`, `DnsStack`) delete what remains.
 2. A push to a non-`main` branch in a service repo runs lint, tests and the image build, pushes
    `sha-<short-sha>` to ECR, and calls `preview-environment.yml`.
 3. `preview-environment.yml` runs `preview env resolve` to name the preview environment, then
@@ -75,3 +77,6 @@ A pause-pod headroom Deployment holds spare preview environment capacity, sized 
   workload trigger with a Prometheus or metrics-api count across namespaces before relying on it.
 - Branch migrations as Helm hook Jobs (FR-5.4), event publishing (FR-9) and the golden image build
   (FR-6.2) are not implemented yet.
+- Not in the CDK app yet: the pre-pull DaemonSet (FR-6.5, FR-7.5), oauth2-proxy login (Section 4a),
+  NLB access logs, the working-hours warm minimum for ARC runners (`minRunners` is 0) and the
+  cycle-time dashboard (FR-9.3). The IP allowlist is off unless `previewAllowlistCidrs` is set.

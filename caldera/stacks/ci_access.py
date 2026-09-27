@@ -1,9 +1,24 @@
-from aws_cdk import Acknowledgment, Stack, Validations
+from aws_cdk import Stack
+from aws_cdk import aws_ecr as ecr
+from aws_cdk import aws_events as events
+from aws_cdk import aws_iam as iam
 from constructs import Construct
 
 from caldera.config import PlatformConfig
+from caldera.constructs.pod_identity import pod_identity_role
 from caldera.stacks.cluster import ClusterStack
 from caldera.stacks.registry import RegistryStack
+
+GITHUB_ISSUER = "token.actions.githubusercontent.com"
+RUNNER_NAMESPACE = "arc-runners"
+RUNNER_SERVICE_ACCOUNT = "arc-runner"
+EVENT_BUS = "prismatic-events"
+
+
+def _push_and_describe(role: iam.IGrantable, repositories: list[ecr.IRepository]) -> None:
+    for repository in repositories:
+        repository.grant_pull_push(role)
+        repository.grant(role, "ecr:DescribeImages")
 
 
 class CiAccessStack(Stack):
@@ -20,8 +35,54 @@ class CiAccessStack(Stack):
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
-        Validations.of(self).acknowledge(
-            Acknowledgment(
-                id="CloudFormation-Validate::F0001", reason="resources arrive in a later PR"
+        self.config = config
+        self.github = iam.OidcProviderNative(
+            self,
+            "GitHubOidc",
+            url=f"https://{GITHUB_ISSUER}",
+            client_ids=["sts.amazonaws.com"],
+        )
+        self.bus = events.EventBus(self, "EventBus", event_bus_name=EVENT_BUS)
+
+        service_repositories = list(registry.service_repositories.values())
+        self.push_roles = {}
+        for service in config.registry.services:
+            role = self._github_role(f"Push-{service.repo}", service.repo, "ref:refs/heads/*")
+            _push_and_describe(
+                role, [registry.service_repositories[service.image], registry.build_cache]
             )
+            self.bus.grant_put_events_to(role)
+            self.push_roles[service.repo] = role
+
+        self.golden_image_role = self._github_role(
+            "GoldenImage", config.platform_repo, "ref:refs/heads/main"
+        )
+        _push_and_describe(self.golden_image_role, [registry.golden_db, registry.build_cache])
+        self.bus.grant_put_events_to(self.golden_image_role)
+
+        self.runner_role = pod_identity_role(
+            self, "RunnerRole", [], cluster_name=config.cluster_name
+        )
+        _push_and_describe(
+            self.runner_role, [*service_repositories, registry.golden_db, registry.build_cache]
+        )
+        self.bus.grant_put_events_to(self.runner_role)
+        cluster.associate(
+            self, "RunnerIdentity", RUNNER_NAMESPACE, RUNNER_SERVICE_ACCOUNT, self.runner_role
+        )
+
+    def _github_role(self, construct_id: str, repo: str, subject: str) -> iam.Role:
+        """A role that only push events from one repository can assume (never fork PRs)."""
+        return iam.Role(
+            self,
+            construct_id,
+            assumed_by=iam.WebIdentityPrincipal(
+                self.github.oidc_provider_arn,
+                conditions={
+                    "StringEquals": {f"{GITHUB_ISSUER}:aud": "sts.amazonaws.com"},
+                    "StringLike": {
+                        f"{GITHUB_ISSUER}:sub": f"repo:{self.config.github_org}/{repo}:{subject}"
+                    },
+                },
+            ),
         )

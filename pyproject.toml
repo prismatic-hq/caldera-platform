@@ -48,6 +48,7 @@ known-first-party = [
     "preview_cli",
     "golden_seeder",
     "cfn",
+    "drainer",
     "network_sweeper",
     "zone_sweeper",
 ]

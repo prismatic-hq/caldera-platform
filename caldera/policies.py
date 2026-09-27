@@ -195,3 +195,147 @@ def karpenter_controller_statements(
         ),
         iam.PolicyStatement(actions=["eks:DescribeCluster"], resources=[cluster_arn]),
     ]
+
+
+def load_balancer_controller_statements(
+    stack: Stack, cluster: str, vpc_id: str, vpc_arn: str
+) -> list[iam.PolicyStatement]:
+    """AWS Load Balancer Controller, scoped to resources it tags with elbv2.k8s.aws/cluster.
+
+    https://github.com/kubernetes-sigs/aws-load-balancer-controller/blob/main/docs/install/iam_policy.json
+    """
+    tagged = {"StringEquals": {"aws:ResourceTag/elbv2.k8s.aws/cluster": cluster}}
+    request_tagged = {"StringEquals": {"aws:RequestTag/elbv2.k8s.aws/cluster": cluster}}
+    elb = [
+        _arn(stack, "elasticloadbalancing", "loadbalancer", "net/*"),
+        _arn(stack, "elasticloadbalancing", "targetgroup"),
+    ]
+    listeners = [
+        _arn(stack, "elasticloadbalancing", "listener", "net/*"),
+        _arn(stack, "elasticloadbalancing", "listener-rule", "net/*"),
+    ]
+    return [
+        _describe(
+            "ec2:DescribeAccountAttributes",
+            "ec2:DescribeAddresses",
+            "ec2:DescribeAvailabilityZones",
+            "ec2:DescribeInstances",
+            "ec2:DescribeInternetGateways",
+            "ec2:DescribeNetworkInterfaces",
+            "ec2:DescribeRouteTables",
+            "ec2:DescribeSecurityGroups",
+            "ec2:DescribeSubnets",
+            "ec2:DescribeTags",
+            "ec2:DescribeVpcs",
+            "elasticloadbalancing:DescribeListenerAttributes",
+            "elasticloadbalancing:DescribeListenerCertificates",
+            "elasticloadbalancing:DescribeListeners",
+            "elasticloadbalancing:DescribeLoadBalancerAttributes",
+            "elasticloadbalancing:DescribeLoadBalancers",
+            "elasticloadbalancing:DescribeRules",
+            "elasticloadbalancing:DescribeSSLPolicies",
+            "elasticloadbalancing:DescribeTags",
+            "elasticloadbalancing:DescribeTargetGroupAttributes",
+            "elasticloadbalancing:DescribeTargetGroups",
+            "elasticloadbalancing:DescribeTargetHealth",
+            "elasticloadbalancing:DescribeCapacityReservation",
+            "elasticloadbalancing:DescribeTrustStores",
+        ),
+        iam.PolicyStatement(
+            actions=["iam:CreateServiceLinkedRole"],
+            resources=[
+                _arn(
+                    stack,
+                    "iam",
+                    "role",
+                    "aws-service-role/elasticloadbalancing.amazonaws.com/"
+                    "AWSServiceRoleForElasticLoadBalancing",
+                    region="",
+                )
+            ],
+            conditions={
+                "StringEquals": {"iam:AWSServiceName": "elasticloadbalancing.amazonaws.com"}
+            },
+        ),
+        iam.PolicyStatement(
+            actions=["ec2:CreateSecurityGroup"],
+            resources=[_arn(stack, "ec2", "vpc", vpc_id)],
+        ),
+        iam.PolicyStatement(
+            actions=["ec2:CreateSecurityGroup"],
+            resources=_ec2(stack, "security-group"),
+            conditions=request_tagged,
+        ),
+        iam.PolicyStatement(
+            actions=["ec2:CreateTags"],
+            resources=_ec2(stack, "security-group"),
+            conditions={
+                "StringEquals": {
+                    "ec2:CreateAction": "CreateSecurityGroup",
+                    "aws:RequestTag/elbv2.k8s.aws/cluster": cluster,
+                }
+            },
+        ),
+        iam.PolicyStatement(
+            actions=[
+                "ec2:AuthorizeSecurityGroupIngress",
+                "ec2:RevokeSecurityGroupIngress",
+                "ec2:CreateTags",
+                "ec2:DeleteTags",
+                "ec2:DeleteSecurityGroup",
+            ],
+            resources=_ec2(stack, "security-group"),
+            conditions={"ArnEquals": {"ec2:Vpc": vpc_arn}},
+        ),
+        iam.PolicyStatement(
+            actions=[
+                "elasticloadbalancing:CreateLoadBalancer",
+                "elasticloadbalancing:CreateTargetGroup",
+            ],
+            resources=elb,
+            conditions=request_tagged,
+        ),
+        iam.PolicyStatement(
+            actions=["elasticloadbalancing:AddTags"],
+            resources=elb,
+            conditions={
+                "StringEquals": {
+                    "aws:RequestTag/elbv2.k8s.aws/cluster": cluster,
+                    "elasticloadbalancing:CreateAction": [
+                        "CreateTargetGroup",
+                        "CreateLoadBalancer",
+                    ],
+                }
+            },
+        ),
+        iam.PolicyStatement(
+            actions=[
+                "elasticloadbalancing:AddTags",
+                "elasticloadbalancing:RemoveTags",
+                "elasticloadbalancing:ModifyLoadBalancerAttributes",
+                "elasticloadbalancing:SetIpAddressType",
+                "elasticloadbalancing:SetSecurityGroups",
+                "elasticloadbalancing:SetSubnets",
+                "elasticloadbalancing:DeleteLoadBalancer",
+                "elasticloadbalancing:ModifyTargetGroup",
+                "elasticloadbalancing:ModifyTargetGroupAttributes",
+                "elasticloadbalancing:DeleteTargetGroup",
+                "elasticloadbalancing:RegisterTargets",
+                "elasticloadbalancing:DeregisterTargets",
+                "elasticloadbalancing:CreateListener",
+                "elasticloadbalancing:ModifyListenerAttributes",
+            ],
+            resources=elb,
+            conditions=tagged,
+        ),
+        iam.PolicyStatement(
+            actions=[
+                "elasticloadbalancing:DeleteListener",
+                "elasticloadbalancing:ModifyListener",
+                "elasticloadbalancing:AddTags",
+                "elasticloadbalancing:RemoveTags",
+            ],
+            resources=listeners,
+            conditions=tagged,
+        ),
+    ]
