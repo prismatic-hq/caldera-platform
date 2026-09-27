@@ -3,13 +3,13 @@ import os
 import httpx
 import pytest
 
-BASE_URL_TEMPLATE = os.getenv("VENT_BASE_URL", "")
+BASE_URL_TEMPLATE = os.getenv("PREVIEW_BASE_URL", "")
 
 
 @pytest.fixture(autouse=True)
-def require_vent() -> None:
+def require_preview_environment() -> None:
     if not BASE_URL_TEMPLATE:
-        pytest.skip("VENT_BASE_URL is not set")
+        pytest.skip("PREVIEW_BASE_URL is not set")
 
 
 def service_url(service: str) -> str:
