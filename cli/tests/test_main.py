@@ -215,7 +215,10 @@ def test_reset_dry_run() -> None:
     code, output = invoke("env", "reset", "--name", "quake-alerts", "--dry-run")
 
     assert code == 0
-    assert "kubectl rollout restart deployment/postgres --namespace preview-quake-alerts" in output
+    assert (
+        "helm upgrade preview-quake-alerts charts/services --namespace preview-quake-alerts "
+        "--reuse-values --wait --timeout 5m"
+    ) in output
 
 
 @pytest.mark.parametrize(

@@ -123,12 +123,24 @@ def test_down_uninstalls_release_then_deletes_namespace() -> None:
     assert commands[1][-2:] == ["--context", "kind-caldera"]
 
 
-def test_reset_restarts_postgres_and_waits() -> None:
-    commands = reset_commands("quake-alerts", Target())
+def test_reset_reruns_the_release_hooks_with_the_deployed_values() -> None:
+    build, upgrade = reset_commands("quake-alerts", Target(context="kind-caldera"))
 
-    assert commands[0][:4] == ["kubectl", "rollout", "restart", "deployment/postgres"]
-    assert commands[1][:4] == ["kubectl", "rollout", "status", "deployment/postgres"]
-    assert all("preview-quake-alerts" in command for command in commands)
+    assert build == ["helm", "dependency", "build", "charts/services"]
+    assert upgrade == [
+        "helm",
+        "upgrade",
+        "preview-quake-alerts",
+        "charts/services",
+        "--namespace",
+        "preview-quake-alerts",
+        "--reuse-values",
+        "--wait",
+        "--timeout",
+        "5m",
+        "--kube-context",
+        "kind-caldera",
+    ]
 
 
 def test_up_sets_domain_and_pins_the_golden_image_when_known() -> None:
