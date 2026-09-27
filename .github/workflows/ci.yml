@@ -70,6 +70,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run python scripts/render_charts.py --dependencies-only
       - run: docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/apps" "$HELM_UNITTEST_IMAGE" charts/*
 
   manifests:

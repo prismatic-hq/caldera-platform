@@ -18,9 +18,8 @@ tests:
           value: Memory
       - notExists:
           path: spec.template.spec.volumes[0].persistentVolumeClaim
-      - equal:
+      - notExists:
           path: spec.template.spec.priorityClassName
-          value: preview-environment
       - equal:
-          path: spec.template.metadata.labels["app.kubernetes.io/part-of"]
-          value: preview-environment
+          path: spec.template.metadata.labels["prismatic.dev/environment"]
+          value: quake-alerts

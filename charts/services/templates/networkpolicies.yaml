@@ -4,7 +4,7 @@ metadata:
   name: default-deny
   namespace: {{ $.Release.Namespace }}
   labels:
-    {{- include "preview.labels" . | nindent 4 }}
+    {{- include "services.labels" . | nindent 4 }}
 spec:
   podSelector: {}
   policyTypes: ["Ingress", "Egress"]
@@ -15,7 +15,7 @@ metadata:
   name: allow-same-namespace
   namespace: {{ $.Release.Namespace }}
   labels:
-    {{- include "preview.labels" . | nindent 4 }}
+    {{- include "services.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchExpressions:
@@ -33,30 +33,10 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-gateway-to-services
-  namespace: {{ $.Release.Namespace }}
-  labels:
-    {{- include "preview.labels" . | nindent 4 }}
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/component: api
-  policyTypes: ["Ingress"]
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ .Values.gateway.namespace }}
-      ports:
-        - port: http
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
   name: allow-dns
   namespace: {{ $.Release.Namespace }}
   labels:
-    {{- include "preview.labels" . | nindent 4 }}
+    {{- include "services.labels" . | nindent 4 }}
 spec:
   podSelector: {}
   policyTypes: ["Egress"]
@@ -80,7 +60,7 @@ metadata:
   name: postgres-from-services
   namespace: {{ $.Release.Namespace }}
   labels:
-    {{- include "preview.labels" . | nindent 4 }}
+    {{- include "services.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:

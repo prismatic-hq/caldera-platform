@@ -29,11 +29,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--charts", type=Path, default=Path("charts"))
     parser.add_argument("--platform", type=Path, default=Path("platform"))
     parser.add_argument("--out", type=Path, default=Path(".rendered"))
+    parser.add_argument(
+        "--dependencies-only", action="store_true", help="Only run helm dependency build"
+    )
     args = parser.parse_args(argv)
-    args.out.mkdir(parents=True, exist_ok=True)
-    for chart in chart_dirs(args.charts):
+    charts = chart_dirs(args.charts)
+    for chart in charts:
         if has_dependencies(chart):
             subprocess.run(["helm", "dependency", "build", str(chart)], check=True)
+    if args.dependencies_only:
+        return 0
+    args.out.mkdir(parents=True, exist_ok=True)
+    for chart in charts:
         for command, target in render_commands(chart, args.out):
             target.write_text(
                 subprocess.run(command, check=True, capture_output=True, text=True).stdout

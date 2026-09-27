@@ -75,6 +75,9 @@
       "properties": {
         "name": {
           "type": "string"
+        },
+        "kind": {
+          "type": "string"
         }
       }
     },
@@ -191,6 +194,15 @@
           "$ref": "#/definitions/resources"
         }
       }
+    },
+    "routeLabels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "service": {
+      "type": "object"
     }
   }
 }

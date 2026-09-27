@@ -10,3 +10,5 @@ cdk.out
 .env
 .ruff_cache
 .rendered
+charts/*/charts/
+__snapshot__/

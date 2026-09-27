@@ -1,21 +1,21 @@
-suite: preview environment name validation
+suite: environment validation
 values:
   - ../ci/default-values.yaml
 templates:
   - templates/services.yaml
 tests:
-  - it: fails when the preview environment name is missing
+  - it: fails when the environment name is missing
     set:
       environment.name: ""
     asserts:
       - failedTemplate:
           errorPattern: environment.name is required
-  - it: fails on a preview environment name that is not a DNS label
+  - it: fails on an environment name that is not a DNS label
     set:
       environment.name: Quake_Alerts
     asserts:
       - failedTemplate:
-          errorPattern: invalid preview environment name "Quake_Alerts"
+          errorPattern: invalid environment name "Quake_Alerts"
   - it: fails when a service hostname label exceeds 63 characters
     set:
       environment.name: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

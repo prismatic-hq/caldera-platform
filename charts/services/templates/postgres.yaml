@@ -5,8 +5,8 @@ metadata:
   name: postgres
   namespace: {{ $.Release.Namespace }}
   labels:
-    {{- include "preview.labels" . | nindent 4 }}
-    {{- include "preview.selectorLabels" (dict "name" "postgres") | nindent 4 }}
+    {{- include "services.labels" . | nindent 4 }}
+    app.kubernetes.io/name: postgres
     app.kubernetes.io/component: database
 spec:
   replicas: 1
@@ -14,21 +14,23 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      {{- include "preview.selectorLabels" (dict "name" "postgres") | nindent 6 }}
+      app.kubernetes.io/name: postgres
   template:
     metadata:
       labels:
-        {{- include "preview.labels" . | nindent 8 }}
-        {{- include "preview.selectorLabels" (dict "name" "postgres") | nindent 8 }}
+        {{- include "services.labels" . | nindent 8 }}
+        app.kubernetes.io/name: postgres
         app.kubernetes.io/component: database
     spec:
-      priorityClassName: {{ .Values.priorityClassName }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
       automountServiceAccountToken: false
       securityContext:
-        {{- include "preview.podSecurityContext" (dict "uid" $postgres.uid) | nindent 8 }}
+        {{- include "service.podSecurityContext" (dict "uid" $postgres.uid) | nindent 8 }}
       containers:
         - name: postgres
-          image: {{ include "preview.image" (dict "root" . "image" $postgres.image "tag" ($postgres.image.tag | default .Values.datasetVersion)) }}
+          image: {{ include "service.imageReference" (dict "registry" .Values.image.registry "repository" $postgres.image.repository "tag" ($postgres.image.tag | default .Values.datasetVersion)) }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: postgres
@@ -52,7 +54,7 @@ spec:
           resources:
             {{- toYaml $postgres.resources | nindent 12 }}
           securityContext:
-            {{- include "preview.containerSecurityContext" . | nindent 12 }}
+            {{- include "service.containerSecurityContext" . | nindent 12 }}
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
@@ -78,12 +80,12 @@ metadata:
   name: postgres
   namespace: {{ $.Release.Namespace }}
   labels:
-    {{- include "preview.labels" . | nindent 4 }}
-    {{- include "preview.selectorLabels" (dict "name" "postgres") | nindent 4 }}
+    {{- include "services.labels" . | nindent 4 }}
+    app.kubernetes.io/name: postgres
     app.kubernetes.io/component: database
 spec:
   selector:
-    {{- include "preview.selectorLabels" (dict "name" "postgres") | nindent 4 }}
+    app.kubernetes.io/name: postgres
   ports:
     - name: postgres
       port: 5432

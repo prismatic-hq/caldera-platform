@@ -1,0 +1,6 @@
+dependencies:
+- name: service
+  repository: file://../service
+  version: 0.1.0
+digest: sha256:387c53b27b83ba4a19188cacf9225b74fc673443a64447487472f93fb903eb86
+generated: "2026-09-27T00:15:15.953895-05:00"

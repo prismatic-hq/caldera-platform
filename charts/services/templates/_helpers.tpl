@@ -1,47 +1,18 @@
-{{- define "preview.name" -}}
+{{- define "services.environmentName" -}}
 {{- $name := required "environment.name is required" .Values.environment.name -}}
 {{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $name) -}}
-{{- fail (printf "invalid preview environment name %q: use lowercase letters, digits and '-', starting and ending with a letter or digit" $name) -}}
-{{- end -}}
-{{- range $service, $_ := .Values.services -}}
-{{- $label := printf "%s-%s" $service $name -}}
-{{- if gt (len $label) 63 -}}
-{{- fail (printf "hostname label too long: %q is %d characters, DNS labels allow 63" $label (len $label)) -}}
-{{- end -}}
+{{- fail (printf "invalid environment name %q: use lowercase letters, digits and '-', starting and ending with a letter or digit" $name) -}}
 {{- end -}}
 {{- $name -}}
 {{- end -}}
 
-{{- define "preview.labels" -}}
-app.kubernetes.io/part-of: preview-environment
+{{- define "services.labels" -}}
+app.kubernetes.io/part-of: {{ include "services.environmentName" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
-prismatic.dev/preview-environment: {{ include "preview.name" . }}
-{{- end -}}
-
-{{- define "preview.selectorLabels" -}}
-app.kubernetes.io/name: {{ .name }}
-{{- end -}}
-
-{{- define "preview.image" -}}
-{{- $registry := .root.Values.image.registry -}}
-{{- $reference := printf "%s:%s" .image.repository (required "image tag is required" .tag) -}}
-{{- if $registry -}}{{ printf "%s/%s" $registry $reference }}{{- else -}}{{ $reference }}{{- end -}}
-{{- end -}}
-
-{{- define "preview.podSecurityContext" -}}
-runAsNonRoot: true
-runAsUser: {{ .uid }}
-runAsGroup: {{ .uid }}
-fsGroup: {{ .uid }}
-seccompProfile:
-  type: RuntimeDefault
-{{- end -}}
-
-{{- define "preview.containerSecurityContext" -}}
-allowPrivilegeEscalation: false
-readOnlyRootFilesystem: true
-capabilities:
-  drop: ["ALL"]
+prismatic.dev/environment: {{ include "services.environmentName" . }}
+{{- with .Values.environment.kind }}
+prismatic.dev/environment-kind: {{ . }}
+{{- end }}
 {{- end -}}

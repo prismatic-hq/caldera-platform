@@ -1,9 +1,11 @@
 environment:
   name: ""
+  kind: ""
 
 datasetVersion: latest
 domain: preview.example.com
-priorityClassName: preview-environment
+priorityClassName: ""
+routeLabels: {}
 
 gateway:
   name: preview
