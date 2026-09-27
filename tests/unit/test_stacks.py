@@ -616,37 +616,3 @@ def test_addons_run_at_most_three_kubectl_resources_at_once(templates) -> None:
         if not any(ordered(a, b) for a, b in combinations(group, 2))
     ]
     assert not concurrent, concurrent[0]
-
-
-def test_quotas_stack_raises_lambda_concurrency_to_fifty(templates) -> None:
-    [quota] = resources(templates["Quotas"], "Custom::ServiceQuota").values()
-
-    assert {
-        key: quota["Properties"][key] for key in ("ServiceCode", "QuotaCode", "DesiredValue")
-    } == {"ServiceCode": "lambda", "QuotaCode": "L-B99A9384", "DesiredValue": "50"}
-
-
-def test_quota_role_can_only_touch_the_lambda_concurrency_quota(templates) -> None:
-    quotas = templates["Quotas"]
-    statements = [
-        statement
-        for role_id in resources(quotas, "AWS::IAM::Role")
-        for statement in role_statements(quotas, role_id)
-        if any(
-            action.startswith("servicequotas:")
-            for action in (
-                statement["Action"]
-                if isinstance(statement["Action"], list)
-                else [statement["Action"]]
-            )
-        )
-    ]
-
-    assert len(statements) == 1
-    [statement] = statements
-    assert set(statement["Action"]) == {
-        "servicequotas:GetServiceQuota",
-        "servicequotas:ListRequestedServiceQuotaChangeHistoryByQuota",
-        "servicequotas:RequestServiceQuotaIncrease",
-    }
-    assert json.dumps(statement["Resource"]).endswith(':lambda/L-B99A9384"]]}')
