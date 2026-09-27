@@ -4,9 +4,15 @@
   "title": "Prismatic platform event registry v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "typePrefix", "types"],
+  "required": [
+    "version",
+    "typePrefix",
+    "types"
+  ],
   "properties": {
-    "version": { "const": 1 },
+    "version": {
+      "const": 1
+    },
     "typePrefix": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
@@ -17,16 +23,29 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["type", "owner", "producer", "consumers", "subject", "schema", "delivery", "status"],
+        "required": [
+          "type",
+          "producer",
+          "subject",
+          "schema"
+        ],
         "properties": {
-          "type": { "type": "string", "pattern": "^[a-z][a-z0-9]*\\.[a-z][a-z0-9]*\\.[a-z][a-z0-9-]*\\.v[1-9][0-9]*$" },
-          "owner": { "type": "string", "minLength": 1 },
-          "producer": { "type": "string", "minLength": 1 },
-          "consumers": { "type": "array", "minItems": 1, "items": { "type": "string" } },
-          "subject": { "type": "string", "minLength": 1 },
-          "schema": { "type": "string", "pattern": "^data/[a-z0-9.-]+\\.schema\\.json$" },
-          "delivery": { "enum": ["at-least-once"] },
-          "status": { "enum": ["planned", "active", "deprecated"] }
+          "type": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*\\.[a-z][a-z0-9]*\\.[a-z][a-z0-9-]*\\.v[1-9][0-9]*$"
+          },
+          "producer": {
+            "type": "string",
+            "minLength": 1
+          },
+          "subject": {
+            "type": "string",
+            "minLength": 1
+          },
+          "schema": {
+            "type": "string",
+            "pattern": "^data/[a-z0-9.-]+\\.schema\\.json$"
+          }
         }
       }
     }
