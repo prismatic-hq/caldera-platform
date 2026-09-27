@@ -145,6 +145,6 @@ def test_failed_async_reinvocation_reports_failed_to_cloudformation(recorder: Re
         "responseContext": {"statusCode": 200, "functionError": "Unhandled"},
     }
 
-    cfn.run(record, FakeContext([900_000]), lambda p: pytest.fail("cleanup ran"))
+    cfn.report_failure(record, FakeContext([900_000]))
 
     assert recorder.responses == [("FAILED", "re-invocation failed: RetriesExhausted")]
