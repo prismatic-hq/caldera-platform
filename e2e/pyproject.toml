@@ -1,0 +1,13 @@
+[project]
+name = "prismatic-e2e"
+version = "0.1.0"
+description = "End-to-end tests run against a live preview environment"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = ["httpx>=0.28", "pytest>=8.4", "pytest-xdist>=3.8"]
+
+[tool.pytest.ini_options]
+addopts = "-ra -n 4 -p no:cacheprovider"
+
+[tool.uv]
+package = false

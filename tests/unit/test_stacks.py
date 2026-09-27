@@ -206,9 +206,9 @@ def test_registry_repositories_are_immutable_and_emptied_on_delete(templates) ->
     repos = resources(templates["Registry"], "AWS::ECR::Repository")
     by_name = {r["Properties"]["RepositoryName"]: r["Properties"] for r in repos.values()}
 
-    assert set(by_name) == {"tremor-api", "steward-api", "golden-db", "build-cache"}
+    assert set(by_name) == {"tremor-api", "steward-api", "golden-db", "e2e", "build-cache"}
     assert all(props["EmptyOnDelete"] for props in by_name.values())
-    for name in ("tremor-api", "steward-api", "golden-db"):
+    for name in ("tremor-api", "steward-api", "golden-db", "e2e"):
         assert by_name[name]["ImageTagMutability"] == "IMMUTABLE_WITH_EXCLUSION"
         assert (
             '"tagPatternList":["sha-*"]' in by_name[name]["LifecyclePolicy"]["LifecyclePolicyText"]
@@ -243,6 +243,17 @@ def test_runners_get_ecr_push_through_pod_identity(templates) -> None:
         "AWS::EKS::PodIdentityAssociation",
         {"Namespace": "arc-runners", "ServiceAccount": "arc-runner"},
     )
+
+
+def test_runners_may_push_the_e2e_image(templates) -> None:
+    pushes = [
+        json.dumps(statement["Resource"])
+        for policy in resources(templates["CiAccess"], "AWS::IAM::Policy").values()
+        for statement in policy["Properties"]["PolicyDocument"]["Statement"]
+        if "ecr:PutImage" in statement["Action"]
+    ]
+
+    assert any("GetAttE2e" in resource for resource in pushes)
 
 
 def test_addons_install_every_section_4_chart(templates) -> None:
