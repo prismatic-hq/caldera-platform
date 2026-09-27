@@ -31,6 +31,7 @@ CLUSTER_ISSUER = "letsencrypt"
 GITHUB_APP_SECRET = "github-app"
 RUNNER_REPOS_CONTEXT = "runnerRepos"
 RUNNER_SCALE_SET_SUFFIX = "-runners"
+KUBECTL_CONCURRENCY = 3
 NLB_ANNOTATIONS = {
     f"service.beta.kubernetes.io/aws-load-balancer-{key}": value
     for key, value in {
@@ -44,6 +45,12 @@ NLB_ANNOTATIONS = {
 def runner_scale_set(repo: str) -> str:
     """The `runs-on` label of the repo's ARC scale set; reusable workflows run in the caller."""
     return f"{repo}{RUNNER_SCALE_SET_SUFFIX}"
+
+
+def limit_concurrency(resources: list[IConstruct], lanes: int) -> None:
+    """Chain resources into lanes so kubectl provider Lambdas stay under the account limit."""
+    for earlier, later in zip(resources, resources[lanes:], strict=False):
+        later.node.add_dependency(earlier)
 
 
 def platform_manifests(directory: Path = PLATFORM_MANIFESTS) -> dict[str, list[dict]]:
@@ -84,6 +91,7 @@ class AddonsStack(Stack):
         external_secrets = self._external_secrets()
         self._platform_manifests(keda)
         self._runners(external_secrets)
+        limit_concurrency(self.installed, KUBECTL_CONCURRENCY)
         self._drainer(network, gateway)
 
     def _chart(
