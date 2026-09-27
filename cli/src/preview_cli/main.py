@@ -186,6 +186,11 @@ def _sharing(
     )
 
 
+def _branch_deleted(repo: str, branch: str, offline: bool) -> bool:
+    """Checked under the Lease so a deploy queued behind a teardown cannot recreate it."""
+    return not offline and not _or_exit(_github().branch_exists, repo, branch)
+
+
 def _parse_shas(values: list[str]) -> dict[str, str]:
     shas = {}
     for value in values:
@@ -484,6 +489,10 @@ def up(
         stopwatch.environment = plan.environment
         with _locked(plan.environment, target, lock, dry_run, stopwatch):
             with stopwatch.stage("heads"):
+                if _branch_deleted(repo, branch, offline or dry_run):
+                    typer.echo(f"{repo} branch {branch!r} no longer exists; skipping the deploy")
+                    _write_outputs(github_output, {"skipped": "true"})
+                    return
                 known = {**_or_exit(_parse_shas, sha_for or []), pushed: sha}
                 shas = _or_exit(_shas, services, plan, known, offline)
             _deploy(plan, services, shas, target, options, stopwatch, pushed)

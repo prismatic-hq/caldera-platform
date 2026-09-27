@@ -86,12 +86,25 @@ def test_the_report_script_publishes_a_check_named_e2e() -> None:
     assert "preview-report.cjs" in (WORKFLOWS / "preview-environment.yml").read_text()
 
 
+DEPLOYED = "steps.deploy.outcome == 'success' && steps.deploy.outputs.skipped != 'true'"
+
+
+def test_a_skipped_deploy_records_and_reports_nothing() -> None:
+    report = next(
+        step
+        for step in steps("preview-environment.yml", "up")
+        if "report(" in step.get("with", {}).get("script", "")
+    )
+
+    assert report["if"] == f"always() && {DEPLOYED}"
+
+
 def test_each_preview_deploy_is_a_github_deployment() -> None:
     record = next(
         step for step in steps("preview-environment.yml", "up") if step.get("id") == "deployment"
     )
 
-    assert record["if"] == "steps.deploy.outcome == 'success'"
+    assert record["if"] == DEPLOYED
     assert record["env"]["ENVIRONMENT"] == "${{ steps.deploy.outputs.environment }}"
     assert record["env"]["URL"] == "${{ steps.deploy.outputs.url }}"
     assert "recordDeployment" in record["with"]["script"]
@@ -102,11 +115,11 @@ def test_preview_workflows_run_in_one_job(workflow: str) -> None:
     assert len(jobs(workflow)) == 1
 
 
-def test_deploys_and_teardowns_of_one_branch_share_a_concurrency_group() -> None:
+def test_a_deploy_can_never_cancel_a_teardown() -> None:
     up = jobs("preview-environment.yml")["up"]["concurrency"]
     down = jobs("preview-environment-teardown.yml")["down"]["concurrency"]
 
-    assert down["group"] == "preview-${{ inputs.repo }}-${{ inputs.branch }}"
+    assert down["group"] == "preview-teardown-${{ inputs.repo }}-${{ inputs.branch }}"
     assert up["group"] == (
         "preview-${{ inputs.optimistic && 'optimistic-' || '' }}"
         "${{ inputs.repo }}-${{ inputs.branch }}"

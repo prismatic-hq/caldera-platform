@@ -91,7 +91,7 @@ Optimistic start: on push, the workflow creates the preview environment with the
 | FR-4.8 | The workflow creates a GitHub Deployment per preview environment and posts URLs, timings and the E2E result to the commit and PR. |
 | FR-4.9 | Branch deleted (GitHub `delete` event; "automatically delete head branches" is on, so merges also fire it): if no branch in the preview environment remains, `preview env down`; otherwise redeploy with the deleted service on `main`. |
 | FR-4.10 | A nightly sweeper removes preview environments whose branches no longer exist or with no push for 72h. |
-| FR-4.11 | Deploys and teardowns for one preview environment never overlap: the CLI holds a per-environment Lease; `concurrency: preview-<repo>-<branch>`, `cancel-in-progress: true` for deploys (the newest push wins), `false` for teardown and for the optimistic deploy, which runs in `preview-optimistic-<repo>-<branch>` so the build-gated deploy waits on the Lease instead of cancelling it. |
+| FR-4.11 | Deploys and teardowns for one preview environment never overlap: the CLI holds a per-environment Lease. Deploys use `concurrency: preview-<repo>-<branch>` with `cancel-in-progress: true` (the newest push wins); the optimistic deploy (`preview-optimistic-<repo>-<branch>`) and teardown (`preview-teardown-<repo>-<branch>`) have their own groups and are never cancelled. Under the Lease, `preview env up` skips a branch that no longer exists, so a deploy queued behind a teardown cannot recreate the environment. |
 
 ### FR-5 Preview environment database
 | ID | Requirement |

@@ -97,7 +97,7 @@ jobs:
         run: uv run preview env up --repo "$REPO" --branch "$BRANCH" --sha "$SHA"
       - id: deployment
         name: Record the GitHub deployment
-        if: steps.deploy.outcome == 'success'
+        if: steps.deploy.outcome == 'success' && steps.deploy.outputs.skipped != 'true'
         uses: actions/github-script@v9.0.0
         env:
           ENVIRONMENT: ${{ steps.deploy.outputs.environment }}
@@ -115,7 +115,7 @@ jobs:
           ENVIRONMENT: ${{ steps.deploy.outputs.environment }}
         run: uv run preview env test --name "$ENVIRONMENT"
       - name: Report e2e check, URLs and timings
-        if: always() && steps.deploy.outcome == 'success'
+        if: always() && steps.deploy.outcome == 'success' && steps.deploy.outputs.skipped != 'true'
         uses: actions/github-script@v9.0.0
         env:
           RESULT: ${{ steps.deploy.outputs.result }}

@@ -36,7 +36,7 @@ jobs:
     if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
     runs-on: ${{ github.event.repository.name }}-runners
     concurrency:
-      group: preview-${{ inputs.repo }}-${{ inputs.branch }}
+      group: preview-teardown-${{ inputs.repo }}-${{ inputs.branch }}
       cancel-in-progress: false
     env:
       UV_NO_SYNC: "1"
