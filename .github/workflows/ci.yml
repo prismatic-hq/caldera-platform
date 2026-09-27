@@ -21,7 +21,7 @@ env:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: caldera-platform-runners
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
@@ -31,7 +31,7 @@ jobs:
       - run: uv run pre-commit run --all-files --show-diff-on-failure
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: caldera-platform-runners
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
@@ -41,7 +41,7 @@ jobs:
       - run: uv run pytest
 
   synth:
-    runs-on: ubuntu-latest
+    runs-on: caldera-platform-runners
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
@@ -59,7 +59,7 @@ jobs:
             cdk.out/*.template.json
 
   chart-lint:
-    runs-on: ubuntu-latest
+    runs-on: caldera-platform-runners
     steps:
       - uses: actions/checkout@v7
         with:
@@ -69,7 +69,7 @@ jobs:
           sh -c 'git config --global --add safe.directory "*" && ct lint --all --chart-dirs charts --target-branch main'
 
   chart-unittest:
-    runs-on: ubuntu-latest
+    runs-on: caldera-platform-runners
     steps:
       - uses: actions/checkout@v7
       - uses: azure/setup-helm@v5.0.1
@@ -83,7 +83,7 @@ jobs:
       - run: docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/apps" "$HELM_UNITTEST_IMAGE" charts/*
 
   manifests:
-    runs-on: ubuntu-latest
+    runs-on: caldera-platform-runners
     steps:
       - uses: actions/checkout@v7
       - uses: azure/setup-helm@v5.0.1
@@ -99,7 +99,7 @@ jobs:
       - run: docker run --rm -v "$PWD/rendered:/r" "$TRIVY_IMAGE" config --exit-code 1 /r
 
   runner-access:
-    runs-on: ubuntu-latest
+    runs-on: caldera-platform-runners
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
