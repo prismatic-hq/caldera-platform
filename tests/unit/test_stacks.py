@@ -389,6 +389,23 @@ def test_envoy_service_announces_the_wildcards_with_the_external_dns_annotation(
     assert not [key for key in annotations if key.startswith("external-dns.alpha.")]
 
 
+def test_hubble_ui_is_routed_through_the_gateway_on_the_dev_listener(templates) -> None:
+    [route] = [
+        doc
+        for r in resources(templates["Addons"], "Custom::AWSCDK-EKS-KubernetesResource").values()
+        if isinstance(r["Properties"]["Manifest"], str)
+        for doc in json.loads(r["Properties"]["Manifest"])
+        if doc["kind"] == "HTTPRoute" and doc["metadata"]["name"] == "hubble-ui"
+    ]
+
+    assert route["metadata"]["namespace"] == "kube-system"
+    assert route["spec"]["hostnames"] == ["hubble.dev.example.com"]
+    assert route["spec"]["parentRefs"] == [
+        {"name": "preview", "namespace": "envoy-gateway-system", "sectionName": "https-dev"}
+    ]
+    assert route["spec"]["rules"] == [{"backendRefs": [{"name": "hubble-ui", "port": 80}]}]
+
+
 def test_pod_identity_roles_trust_only_this_cluster(templates) -> None:
     trust = templates["Dns"].find_resources("AWS::IAM::Role")
     pod_roles = [

@@ -28,6 +28,7 @@ GATEWAY_NAME = "preview"
 GATEWAY_CLASS = "envoy-gateway"
 WILDCARD_SECRET = "wildcard-tls"
 CLUSTER_ISSUER = "letsencrypt"
+HUBBLE_UI = "hubble-ui"
 GITHUB_APP_SECRET = "github-app"
 RUNNER_REPOS_CONTEXT = "runnerRepos"
 RUNNER_SCALE_SET_SUFFIX = "-runners"
@@ -289,10 +290,35 @@ class AddonsStack(Stack):
                 "enableProxyProtocol": True,
             },
         }
-        documents = [certificate, proxy, gateway_class, gateway, client_traffic]
+        documents = [
+            certificate,
+            proxy,
+            gateway_class,
+            gateway,
+            client_traffic,
+            self._hubble_route(),
+        ]
         if self.config.allowlist_cidrs:
             documents.append(self._allowlist())
         return self._manifest("Gateway", *documents, after=[envoy_gateway])
+
+    def _hubble_route(self) -> dict:
+        return {
+            "apiVersion": "gateway.networking.k8s.io/v1",
+            "kind": "HTTPRoute",
+            "metadata": {"name": HUBBLE_UI, "namespace": charts.CILIUM.namespace},
+            "spec": {
+                "parentRefs": [
+                    {
+                        "name": GATEWAY_NAME,
+                        "namespace": GATEWAY_NAMESPACE,
+                        "sectionName": "https-dev",
+                    }
+                ],
+                "hostnames": [f"hubble.{self.config.dev_domain}"],
+                "rules": [{"backendRefs": [{"name": HUBBLE_UI, "port": 80}]}],
+            },
+        }
 
     def _allowlist(self) -> dict:
         return {
