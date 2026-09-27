@@ -15,9 +15,7 @@ metadata:
 spec:
   restartPolicy: Never
   activeDeadlineSeconds: {{ $e2e.timeoutSeconds }}
-  {{- with .Values.priorityClassName }}
-  priorityClassName: {{ . }}
-  {{- end }}
+  {{- with include "service.podScheduling" .Values | trim }}{{ . | nindent 2 }}{{- end }}
   automountServiceAccountToken: false
   securityContext:
     {{- include "service.podSecurityContext" (dict "uid" 10001) | nindent 4 }}

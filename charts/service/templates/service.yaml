@@ -12,6 +12,8 @@
   "port" .Values.port
   "resources" .Values.resources
   "priorityClassName" .Values.priorityClassName
+  "nodeSelector" .Values.nodeSelector
+  "tolerations" .Values.tolerations
   "env" .Values.env
   "route" .Values.route) }}
 {{- end }}

@@ -116,6 +116,18 @@
     "priorityClassName": {
       "type": "string"
     },
+    "nodeSelector": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "tolerations": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
     "gateway": {
       "type": "object",
       "required": [

@@ -5,6 +5,8 @@ environment:
 datasetVersion: latest
 domain: preview.example.com
 priorityClassName: ""
+nodeSelector: {}
+tolerations: []
 routeLabels: {}
 
 gateway:

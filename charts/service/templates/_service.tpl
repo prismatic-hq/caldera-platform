@@ -14,6 +14,20 @@ capabilities:
   drop: ["ALL"]
 {{- end -}}
 
+{{- define "service.podScheduling" -}}
+{{- with .priorityClassName }}
+priorityClassName: {{ . }}
+{{- end }}
+{{- with .nodeSelector }}
+nodeSelector:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with .tolerations }}
+tolerations:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end -}}
+
 {{- define "service.imageReference" -}}
 {{- $repository := required "image.repository is required" .repository -}}
 {{- $reference := printf "%s:%s" $repository (required "image.tag is required" .tag) -}}
@@ -35,7 +49,8 @@ capabilities:
 
 {{/*
 Renders one service. Context keys: name, namespace, labels, image (map with registry, repository,
-tag), pullPolicy, port, resources, priorityClassName, env, route (enabled, hostname, labels, gateway).
+tag), pullPolicy, port, resources, priorityClassName, nodeSelector, tolerations, env, route (enabled,
+hostname, labels, gateway).
 */}}
 {{- define "service.manifests" -}}
 {{- include "service.validate" . -}}
@@ -58,9 +73,7 @@ spec:
       labels:
         {{- toYaml $labels | nindent 8 }}
     spec:
-      {{- with .priorityClassName }}
-      priorityClassName: {{ . }}
-      {{- end }}
+      {{- with include "service.podScheduling" . | trim }}{{ . | nindent 6 }}{{- end }}
       automountServiceAccountToken: false
       securityContext:
         {{- include "service.podSecurityContext" (dict "uid" 10001) | nindent 8 }}

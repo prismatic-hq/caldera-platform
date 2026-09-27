@@ -85,3 +85,36 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].env[0].name
           value: LOG_LEVEL
+  - it: schedules onto the tainted preview pool when set
+    values:
+      - ../ci/default-values.yaml
+    set:
+      nodeSelector:
+        karpenter.sh/nodepool: preview-environments
+      tolerations:
+        - key: prismatic.dev/preview
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector
+          value:
+            karpenter.sh/nodepool: preview-environments
+      - equal:
+          path: spec.template.spec.tolerations
+          value:
+            - key: prismatic.dev/preview
+              operator: Equal
+              value: "true"
+              effect: NoSchedule
+  - it: leaves scheduling to the cluster by default
+    values:
+      - ../ci/default-values.yaml
+    documentIndex: 0
+    asserts:
+      - notExists:
+          path: spec.template.spec.nodeSelector
+      - notExists:
+          path: spec.template.spec.tolerations

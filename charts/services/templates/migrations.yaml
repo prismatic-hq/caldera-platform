@@ -24,9 +24,7 @@ spec:
         {{- toYaml $podLabels | nindent 8 }}
     spec:
       restartPolicy: Never
-      {{- with $.Values.priorityClassName }}
-      priorityClassName: {{ . }}
-      {{- end }}
+      {{- with include "service.podScheduling" $.Values | trim }}{{ . | nindent 6 }}{{- end }}
       automountServiceAccountToken: false
       securityContext:
         {{- include "service.podSecurityContext" (dict "uid" 10001) | nindent 8 }}
