@@ -78,7 +78,8 @@ class CiAccessStack(Stack):
             self, "RunnerRole", [], cluster_name=config.cluster_name
         )
         _push_and_describe(
-            self.runner_role, [*service_repositories, registry.golden_db, registry.build_cache]
+            self.runner_role,
+            [*service_repositories, registry.golden_db, registry.e2e, registry.build_cache],
         )
         self.bus.grant_put_events_to(self.runner_role)
         self._runner_parameters(config)
