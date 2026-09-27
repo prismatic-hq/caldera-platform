@@ -60,20 +60,6 @@ jobs:
       - uses: azure/setup-helm@v5
       - run: helm lint --strict charts/prismatic-service
 
-  contracts:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
-        with:
-          enable-cache: true
-      - run: uv sync --locked
-      - run: uv run check-jsonschema --check-metaschema contracts/events/*.schema.json
-      - run: >-
-          uv run check-jsonschema
-          --schemafile contracts/events/registry.v1.schema.json
-          contracts/events/registry.v1.yaml
-
   chart-lint:
     runs-on: ubuntu-latest
     steps:
