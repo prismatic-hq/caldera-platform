@@ -32,21 +32,15 @@ tasks:
   chart:render:
     internal: true
     cmds:
-      - mkdir -p {{.RENDERED}}
-      - for: { var: VALUES }
-        cmd: helm template preview-{{base .ITEM | trimSuffix ".yaml"}} charts/preview-environment -n preview-{{base .ITEM | trimSuffix ".yaml"}} -f {{.ITEM}} > {{.RENDERED}}/{{base .ITEM}}
-      - cp platform/*.yaml {{.RENDERED}}/
-    vars:
-      VALUES:
-        sh: ls charts/preview-environment/ci/*-values.yaml
+      - uv run python scripts/render_charts.py --out {{.RENDERED}}
 
   chart:test:
     internal: true
     cmds:
-      - docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/apps" {{.HELM_UNITTEST_IMAGE}} charts/preview-environment
+      - docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/apps" {{.HELM_UNITTEST_IMAGE}} charts/*
       - >-
         docker run --rm -v "{{.GIT_COMMON_DIR}}:{{.GIT_COMMON_DIR}}" -v "$PWD:$PWD" -w "$PWD" {{.CT_IMAGE}}
-        sh -c 'git config --global --add safe.directory "*" && ct lint --charts charts/preview-environment --target-branch main'
+        sh -c 'git config --global --add safe.directory "*" && ct lint --all --chart-dirs charts --target-branch main'
       - task: chart:render
       - docker run --rm -v "$PWD/{{.RENDERED}}:/r" {{.KUBECONFORM_IMAGE}} -strict -summary -ignore-missing-schemas /r
       - docker run --rm -v "$PWD/{{.RENDERED}}:/r" {{.TRIVY_IMAGE}} config --exit-code 1 /r

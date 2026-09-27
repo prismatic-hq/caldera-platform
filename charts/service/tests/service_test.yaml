@@ -1,0 +1,87 @@
+suite: service
+templates:
+  - templates/service.yaml
+tests:
+  - it: renders nothing without a name
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: renders a Deployment and Service without a route
+    values:
+      - ../ci/default-values.yaml
+    asserts:
+      - hasDocuments:
+          count: 2
+  - it: runs the image with probes at a 2s period and no priority class by default
+    values:
+      - ../ci/default-values.yaml
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: tremor-api:main
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.periodSeconds
+          value: 2
+      - notExists:
+          path: spec.template.spec.priorityClassName
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: api
+  - it: adds an HTTPRoute and gateway ingress policy when the route is enabled
+    values:
+      - ../ci/route-values.yaml
+    asserts:
+      - hasDocuments:
+          count: 4
+  - it: attaches the route to the gateway with the given hostname and labels
+    values:
+      - ../ci/route-values.yaml
+    documentIndex: 2
+    asserts:
+      - isKind:
+          of: HTTPRoute
+      - equal:
+          path: spec.hostnames
+          value: ["steward-quake-alerts.preview.prismatic.dev"]
+      - equal:
+          path: spec.parentRefs[0].namespace
+          value: envoy-gateway-system
+      - equal:
+          path: metadata.labels["prismatic.dev/exposure"]
+          value: preview
+      - equal:
+          path: spec.rules[0].backendRefs[0].port
+          value: 8080
+  - it: allows the gateway namespace to reach only this service
+    values:
+      - ../ci/route-values.yaml
+    documentIndex: 3
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+      - equal:
+          path: spec.podSelector.matchLabels["app.kubernetes.io/name"]
+          value: steward
+      - equal:
+          path: spec.ingress[0].from[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]
+          value: envoy-gateway-system
+  - it: applies the priority class, extra labels, registry and env
+    values:
+      - ../ci/route-values.yaml
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: spec.template.spec.priorityClassName
+          value: preview-environment
+      - equal:
+          path: spec.template.metadata.labels["prismatic.dev/environment"]
+          value: quake-alerts
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: 123456789012.dkr.ecr.us-east-1.amazonaws.com/steward-api:sha-a1b2c3d
+      - equal:
+          path: spec.template.spec.containers[0].env[0].name
+          value: LOG_LEVEL

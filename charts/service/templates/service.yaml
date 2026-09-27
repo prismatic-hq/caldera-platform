@@ -1,0 +1,17 @@
+{{- if .Values.name }}
+{{- $labels := merge (deepCopy .Values.labels) (dict
+  "app.kubernetes.io/instance" .Release.Name
+  "app.kubernetes.io/managed-by" .Release.Service
+  "helm.sh/chart" (printf "%s-%s" .Chart.Name .Chart.Version)) }}
+{{- include "service.manifests" (dict
+  "name" .Values.name
+  "namespace" .Release.Namespace
+  "labels" $labels
+  "image" .Values.image
+  "pullPolicy" .Values.image.pullPolicy
+  "port" .Values.port
+  "resources" .Values.resources
+  "priorityClassName" .Values.priorityClassName
+  "env" .Values.env
+  "route" .Values.route) }}
+{{- end }}

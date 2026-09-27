@@ -1,0 +1,21 @@
+name: steward
+image:
+  registry: 123456789012.dkr.ecr.us-east-1.amazonaws.com
+  repository: steward-api
+  tag: sha-a1b2c3d
+port: 8080
+priorityClassName: preview-environment
+labels:
+  prismatic.dev/environment: quake-alerts
+env:
+  - name: LOG_LEVEL
+    value: info
+route:
+  enabled: true
+  hostname: steward-quake-alerts.preview.prismatic.dev
+  labels:
+    prismatic.dev/exposure: preview
+  gateway:
+    name: preview
+    namespace: envoy-gateway-system
+    sectionName: https
