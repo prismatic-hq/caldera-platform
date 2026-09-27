@@ -9,13 +9,12 @@ from caldera.stacks.ci_access import CiAccessStack
 from caldera.stacks.cluster import ClusterStack
 from caldera.stacks.dns import DnsStack
 from caldera.stacks.network import NetworkStack
-from caldera.stacks.quotas import QuotaStack
 from caldera.stacks.registry import RegistryStack
 
 DEPENDENCIES: dict[str, list[str]] = {
     "Cluster": ["Network"],
     "CiAccess": ["Cluster", "Registry"],
-    "Addons": ["Quotas", "Network", "Cluster", "Dns"],
+    "Addons": ["Network", "Cluster", "Dns"],
 }
 
 
@@ -26,7 +25,6 @@ def build_platform(app: cdk.App, prefix: str = "Caldera") -> dict[str, Stack]:
     )
     Tags.of(app).add(PLATFORM_TAG, config.cluster_name)
 
-    quotas = QuotaStack(app, f"{prefix}Quotas", config=config, env=env)
     network = NetworkStack(app, f"{prefix}Network", config=config, env=env)
     cluster = ClusterStack(app, f"{prefix}Cluster", config=config, network=network, env=env)
     registry = RegistryStack(app, f"{prefix}Registry", config=config, env=env)
@@ -38,7 +36,6 @@ def build_platform(app: cdk.App, prefix: str = "Caldera") -> dict[str, Stack]:
         app, f"{prefix}Addons", config=config, network=network, cluster=cluster, dns=dns, env=env
     )
     stacks: dict[str, Stack] = {
-        "Quotas": quotas,
         "Network": network,
         "Cluster": cluster,
         "Registry": registry,
