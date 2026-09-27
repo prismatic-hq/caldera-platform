@@ -1,0 +1,24 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: vent-headroom
+value: -10
+preemptionPolicy: Never
+globalDefault: false
+description: Placeholder pods that hold spare capacity; any vent pod preempts them.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: vent
+value: 100
+globalDefault: false
+description: Vent workloads (services, Postgres, E2E jobs).
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: baseline
+value: 1000
+globalDefault: false
+description: The long-lived dev environment built from main.
