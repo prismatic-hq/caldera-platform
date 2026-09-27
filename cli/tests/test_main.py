@@ -2,11 +2,13 @@ import json
 import subprocess
 from pathlib import Path
 
+import httpx
 import pytest
 from typer.testing import CliRunner
 
 from preview_cli import main
 from preview_cli.aws import Image
+from preview_cli.github import API_URL, GitHub
 
 runner = CliRunner()
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -215,7 +217,10 @@ def test_reset_dry_run() -> None:
     code, output = invoke("env", "reset", "--name", "quake-alerts", "--dry-run")
 
     assert code == 0
-    assert "kubectl rollout restart deployment/postgres --namespace preview-quake-alerts" in output
+    assert (
+        "helm upgrade preview-quake-alerts charts/services --namespace preview-quake-alerts "
+        "--reuse-values --wait --timeout 5m"
+    ) in output
 
 
 @pytest.mark.parametrize(
@@ -470,3 +475,17 @@ def test_failed_e2e_still_publishes_its_timing(
 
     assert result.exit_code == 1
     assert "| e2e |" in step_summary.read_text()
+
+
+def test_resolve_fails_loudly_when_the_token_cannot_read_the_other_repo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport = httpx.MockTransport(lambda request: httpx.Response(404, json={}))
+    client = httpx.Client(base_url=API_URL, transport=transport)
+    monkeypatch.setattr(main, "_github", lambda: GitHub(None, client))
+
+    code, output = invoke("env", "resolve", "--repo", "tremor-api", "--branch", "feature/x")
+
+    assert code == 2
+    assert "cannot read prismatic-hq/steward-api (HTTP 404)" in output
+    assert "CALDERA_APP_CLIENT_ID" in output

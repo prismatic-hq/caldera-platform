@@ -471,16 +471,18 @@ def reset(
     environment: Annotated[str, typer.Option("--name")],
     services_file: ServicesFileOption = DEFAULT_SERVICES_FILE,
     context: ContextOption = None,
+    chart: ChartOption = "charts/services",
     github_output: GitHubOutputOption = None,
     step_summary: StepSummaryOption = None,
     dry_run: DryRun = False,
 ) -> None:
-    """Restart the preview environment database to return it to golden data."""
+    """Return the preview environment to golden data and re-run its branch migrations."""
     services = _or_exit(ServiceRegistry.load, services_file)
     _or_exit(validate_environment_name, environment, services.names)
     report = Report(github_output, step_summary)
+    target = Target(chart=chart, context=context)
     with _timed("reset", report, environment) as stopwatch, stopwatch.stage("reset"):
-        _run(reset_commands(environment, Target(context=context)), dry_run)
+        _run(reset_commands(environment, target), dry_run)
 
 
 @env_app.command("test")
