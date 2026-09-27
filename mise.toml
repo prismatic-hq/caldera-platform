@@ -92,6 +92,11 @@ run = [
   "kubectl --context kind-caldera apply -f platform/",
 ]
 
+[tasks.demo]
+description = "Presenter runner for the REQUIREMENTS.md Section 8 demo, e.g. mise run demo -- --dry-run"
+raw = true
+run = "uv run python -m scripts.demo"
+
 [tasks."local:down"]
 description = "Delete the kind cluster"
 run = "kind delete cluster --name caldera"
