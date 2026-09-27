@@ -19,10 +19,8 @@
       "maxLength": 48
     },
     "repo": {
-      "enum": [
-        "tremor-api",
-        "steward-api"
-      ]
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
     },
     "branch": {
       "type": "string",
@@ -34,46 +32,25 @@
     },
     "services": {
       "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "tremor",
-        "steward"
-      ],
-      "properties": {
-        "tremor": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "ref",
-            "image"
-          ],
-          "properties": {
-            "ref": {
-              "type": "string",
-              "minLength": 1
-            },
-            "image": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        },
-        "steward": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "ref",
-            "image"
-          ],
-          "properties": {
-            "ref": {
-              "type": "string",
-              "minLength": 1
-            },
-            "image": {
-              "type": "string",
-              "minLength": 1
-            }
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ref",
+          "image"
+        ],
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "image": {
+            "type": "string",
+            "minLength": 1
           }
         }
       }
