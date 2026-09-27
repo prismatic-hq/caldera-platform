@@ -3,7 +3,14 @@ from pathlib import Path
 
 import pytest
 
-from scripts.put_github_secrets import GitHubSetting, main, put_github_settings, settings_for
+from scripts.put_github_secrets import (
+    GitHubSetting,
+    OpError,
+    main,
+    put_github_settings,
+    read_op,
+    settings_for,
+)
 
 PRIVATE_KEY = "-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----\n"
 CLIENT_ID = "Iv23liAbCdEf123456"
@@ -115,3 +122,95 @@ def test_main_rejects_a_missing_key_file(tmp_path: Path, capsys) -> None:
 
 def test_setting_describes_itself() -> None:
     assert GitHubSetting("secret", "X", "v").label == "secret X"
+
+
+class FakeOp:
+    def __init__(self, values: dict[str, str]) -> None:
+        self.values = values
+        self.references: list[str] = []
+
+    def __call__(self, reference: str) -> str:
+        self.references.append(reference)
+        return self.values[reference]
+
+
+ITEM = "op://Prismatic/prismatic-hq GitHub App"
+
+
+def test_main_reads_the_app_from_1password_by_default(monkeypatch, capsys) -> None:
+    op = FakeOp({f"{ITEM}/client_id": CLIENT_ID, f"{ITEM}/pem": PRIVATE_KEY})
+    gh = RecordingGh()
+    monkeypatch.setattr("scripts.put_github_secrets.read_op", op)
+    monkeypatch.setattr("scripts.put_github_secrets.run_gh", gh)
+
+    code = main(["--region", "us-east-2"])
+
+    assert code == 0
+    assert op.references == [f"{ITEM}/client_id", f"{ITEM}/pem"]
+    assert (
+        ["secret", "set", "CALDERA_APP_PRIVATE_KEY", "--repo", "prismatic-hq/tremor-api"],
+        PRIVATE_KEY,
+    ) in gh.calls
+    output = capsys.readouterr()
+    assert PRIVATE_KEY not in output.out + output.err
+    assert CLIENT_ID not in output.out + output.err
+
+
+def test_vault_and_item_are_overridable(monkeypatch) -> None:
+    op = FakeOp({"op://Ops/App/client_id": CLIENT_ID, "op://Ops/App/pem": PRIVATE_KEY})
+    monkeypatch.setattr("scripts.put_github_secrets.read_op", op)
+    monkeypatch.setattr("scripts.put_github_secrets.run_gh", RecordingGh())
+
+    assert main(["--region", "us-east-2", "--op-vault", "Ops", "--op-item", "App"]) == 0
+    assert op.references == ["op://Ops/App/client_id", "op://Ops/App/pem"]
+
+
+def test_region_defaults_from_the_environment(monkeypatch) -> None:
+    op = FakeOp({f"{ITEM}/client_id": CLIENT_ID, f"{ITEM}/pem": PRIVATE_KEY})
+    gh = RecordingGh()
+    monkeypatch.setattr("scripts.put_github_secrets.read_op", op)
+    monkeypatch.setattr("scripts.put_github_secrets.run_gh", gh)
+    monkeypatch.setenv("AWS_REGION", "us-west-2")
+
+    assert main([]) == 0
+    assert (
+        ["variable", "set", "AWS_REGION", "--repo", "prismatic-hq/caldera-platform"],
+        "us-west-2",
+    ) in gh.calls
+
+
+def test_missing_region_is_an_input_error(monkeypatch, capsys) -> None:
+    monkeypatch.delenv("AWS_REGION", raising=False)
+    monkeypatch.setattr("scripts.put_github_secrets.read_op", FakeOp({}))
+
+    assert main([]) == 2
+    assert "--region" in capsys.readouterr().err
+
+
+def test_1password_errors_are_actionable(monkeypatch, capsys) -> None:
+    def signed_out(reference: str) -> str:
+        raise OpError(f"op read failed for {reference}: not signed in. Run `op signin`")
+
+    monkeypatch.setattr("scripts.put_github_secrets.read_op", signed_out)
+    monkeypatch.setattr("scripts.put_github_secrets.run_gh", RecordingGh())
+
+    assert main(["--region", "us-east-2"]) == 2
+    assert "op signin" in capsys.readouterr().err
+
+
+def test_read_op_explains_a_missing_cli(monkeypatch) -> None:
+    def no_op(*args, **kwargs):
+        raise FileNotFoundError("op")
+
+    monkeypatch.setattr("scripts.put_github_secrets.subprocess.run", no_op)
+    with pytest.raises(OpError, match="mise install"):
+        read_op(f"{ITEM}/pem")
+
+
+def test_read_op_explains_a_failed_read(monkeypatch) -> None:
+    def failed(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, ["op"], stderr="[ERROR] not currently signed in\n")
+
+    monkeypatch.setattr("scripts.put_github_secrets.subprocess.run", failed)
+    with pytest.raises(OpError, match="op signin"):
+        read_op(f"{ITEM}/pem")

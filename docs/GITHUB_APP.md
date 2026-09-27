@@ -49,19 +49,33 @@ mise run secrets:put -- --app-id <app-id> --installation-id <installation-id> \
 After the command succeeds, delete the `.pem` or move it to a password manager. Never paste the
 key into chat, tickets or commits.
 
+## Keep the app in 1Password
+
+Store the app as one item in the `Prismatic` vault, named `prismatic-hq GitHub App`, with these
+field names so the tasks can read it:
+
+| Field | Value |
+|---|---|
+| `app_id` | App ID |
+| `client_id` | Client ID (`Iv23...`) |
+| `installation_id` | Installation ID |
+| `pem` | The `.pem` private key, attached as a file named `pem` |
+
 ## Store the workflow secrets
 
 Private repositories on the GitHub Free plan cannot read organization secrets or variables, so
-each repo gets its own copy. Run this once, and again after rotating the key:
+each repo gets its own copy. Sign in to 1Password (`op signin`), then run this once, and again
+after rotating the key:
 
 ```sh
-mise run secrets:github -- --client-id <Iv23...> --region us-east-2 \
-  --private-key-file ~/Downloads/<app-name>.<date>.private-key.pem
+mise run secrets:github -- --region us-east-2
 ```
 
-It sets `CALDERA_APP_CLIENT_ID` and `CALDERA_APP_PRIVATE_KEY` secrets and the `AWS_REGION`
-variable on `caldera-platform` and every repo in `services.yaml`. Values go to `gh` on stdin,
-never on the command line. You need admin access to each repo.
+It reads `client_id` and `pem` with `op read` and sets the `CALDERA_APP_CLIENT_ID` and
+`CALDERA_APP_PRIVATE_KEY` secrets and the `AWS_REGION` variable on `caldera-platform` and every
+repo in `services.yaml`. `--region` defaults to `AWS_REGION`. Values go to `gh` on stdin, never on
+the command line or in output. You need admin access to each repo. `--op-vault` and `--op-item`
+select another item; `--client-id` and `--private-key-file` bypass 1Password.
 
 Each job mints a one-hour, contents-read installation token with
 `actions/create-github-app-token`.
@@ -69,5 +83,6 @@ Each job mints a one-hour, contents-read installation token with
 ## Rotate the key
 
 1. Generate a new private key on the app page.
-2. Run `mise run secrets:put` and `mise run secrets:github` with the new `.pem`.
+2. Replace the `pem` file on the 1Password item, then run `mise run secrets:put` with the new
+   `.pem` and `mise run secrets:github -- --region us-east-2`.
 3. Delete the old key on the app page.
