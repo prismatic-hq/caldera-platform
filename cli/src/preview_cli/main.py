@@ -1,9 +1,10 @@
 import json
 import os
 import shlex
+import signal
 import subprocess
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Annotated
@@ -12,7 +13,7 @@ import typer
 import yaml
 from botocore.exceptions import BotoCoreError, ClientError
 
-from preview_cli.access import namespace_manifests
+from preview_cli.access import LOCK_NAMESPACE, namespace_manifests
 from preview_cli.aws import Ecr, Parameters
 from preview_cli.commands import (
     Command,
@@ -30,6 +31,7 @@ from preview_cli.commands import (
 )
 from preview_cli.github import GitHub
 from preview_cli.images import ImageChoice, ImageSource, choose_image
+from preview_cli.lock import EnvironmentLock, KubectlLeases, LeaseStore, holder_identity
 from preview_cli.parameters import DATASET_VERSION_PARAMETER, PREVIEW_DOMAIN_PARAMETER
 from preview_cli.registry import ServiceRegistry
 from preview_cli.resolver import (
@@ -104,7 +106,22 @@ StepSummaryOption = Annotated[
         "--github-step-summary", envvar="GITHUB_STEP_SUMMARY", help="File for the timing table"
     ),
 ]
+LockWaitOption = Annotated[
+    float,
+    typer.Option(
+        "--lock-wait",
+        envvar="PREVIEW_LOCK_WAIT",
+        help="Seconds to wait for another deploy of this environment to finish",
+    ),
+]
+LockNamespaceOption = Annotated[
+    str,
+    typer.Option(
+        "--lock-namespace", envvar="PREVIEW_LOCK_NAMESPACE", help="Namespace of the lock Leases"
+    ),
+]
 DEFAULT_SERVICES_FILE = Path("services.yaml")
+DEFAULT_LOCK_WAIT_SECONDS = 600.0
 GOLDEN_DB_REPOSITORY = "golden-db"
 EXPECTED_ERRORS = (ValueError, LookupError, OSError, BotoCoreError, ClientError)
 
@@ -113,6 +130,12 @@ EXPECTED_ERRORS = (ValueError, LookupError, OSError, BotoCoreError, ClientError)
 class Report:
     github_output: Path | None = None
     step_summary: Path | None = None
+
+
+@dataclass(frozen=True)
+class LockOptions:
+    namespace: str
+    wait_seconds: float
 
 
 @dataclass(frozen=True)
@@ -134,6 +157,10 @@ def _ecr() -> Ecr:
 
 def _parameters() -> Parameters:
     return Parameters()
+
+
+def _lease_store(namespace: str, context: str | None) -> LeaseStore:
+    return KubectlLeases(namespace, context)
 
 
 def _or_exit(function, *args):
@@ -227,6 +254,34 @@ def _publish_timings(record: dict, report: Report) -> None:
 
 def _apply(documents: list[dict], target: Target, dry_run: bool) -> None:
     _execute(apply_command(target), dry_run, yaml.safe_dump_all(documents))
+
+
+def _exit_on_sigterm(signum: int, frame: object) -> None:
+    raise SystemExit(128 + signum)
+
+
+@contextmanager
+def _locked(
+    environment: str, target: Target, lock: LockOptions, dry_run: bool, stopwatch: Stopwatch
+) -> Iterator[None]:
+    """Hold the environment's Lease; a cancelled job (SIGTERM) still releases it."""
+    if dry_run:
+        yield
+        return
+    environment_lock = EnvironmentLock(
+        _lease_store(lock.namespace, target.context),
+        environment,
+        holder_identity(),
+        wait_seconds=lock.wait_seconds,
+    )
+    previous_handler = signal.signal(signal.SIGTERM, _exit_on_sigterm)
+    try:
+        with ExitStack() as stack:
+            with stopwatch.stage("lock"):
+                _or_exit(stack.enter_context, environment_lock.held())
+            yield
+    finally:
+        signal.signal(signal.SIGTERM, previous_handler)
 
 
 def _deployed_release(plan: PreviewPlan, target: Target, dry_run: bool) -> DeployedRelease | None:
@@ -410,12 +465,15 @@ def up(
     registry: RegistryOption = None,
     github_output: GitHubOutputOption = None,
     step_summary: StepSummaryOption = None,
+    lock_wait: LockWaitOption = DEFAULT_LOCK_WAIT_SECONDS,
+    lock_namespace: LockNamespaceOption = LOCK_NAMESPACE,
     dry_run: DryRun = False,
 ) -> None:
     """Create or update the preview environment for a pushed branch."""
     target = Target(chart=chart, context=context, registry=registry)
     report = Report(github_output, step_summary)
     options = DeployOptions(dataset_version, domain, offline, dry_run, report)
+    lock = LockOptions(lock_namespace, lock_wait)
     with _timed("up", report) as stopwatch:
         with stopwatch.stage("resolve"):
             services = _or_exit(ServiceRegistry.load, services_file)
@@ -423,10 +481,12 @@ def up(
             sharing = _or_exit(_sharing, services, pushed, branch, branch_in or [], offline)
             existing = _existing_environments(target, dry_run)
             plan = _or_exit(resolve_push, services.names, pushed, branch, sharing, existing)
-            known = {**_or_exit(_parse_shas, sha_for or []), pushed: sha}
-            shas = _or_exit(_shas, services, plan, known, offline)
         stopwatch.environment = plan.environment
-        _deploy(plan, services, shas, target, options, stopwatch, pushed)
+        with _locked(plan.environment, target, lock, dry_run, stopwatch):
+            with stopwatch.stage("heads"):
+                known = {**_or_exit(_parse_shas, sha_for or []), pushed: sha}
+                shas = _or_exit(_shas, services, plan, known, offline)
+            _deploy(plan, services, shas, target, options, stopwatch, pushed)
 
 
 @env_app.command()
@@ -444,12 +504,15 @@ def down(
     registry: RegistryOption = None,
     github_output: GitHubOutputOption = None,
     step_summary: StepSummaryOption = None,
+    lock_wait: LockWaitOption = DEFAULT_LOCK_WAIT_SECONDS,
+    lock_namespace: LockNamespaceOption = LOCK_NAMESPACE,
     dry_run: DryRun = False,
 ) -> None:
     """Tear down the preview environment for a deleted branch, or redeploy it if kept elsewhere."""
     target = Target(chart=chart, context=context, registry=registry)
     report = Report(github_output, step_summary)
     options = DeployOptions(dataset_version, domain, offline, dry_run, report)
+    lock = LockOptions(lock_namespace, lock_wait)
     with _timed("down", report) as stopwatch:
         with stopwatch.stage("resolve"):
             services = _or_exit(ServiceRegistry.load, services_file)
@@ -458,12 +521,15 @@ def down(
             plan = _or_exit(resolve_delete, services.names, deleted, branch, sharing)
         stopwatch.environment = plan.environment
         _write_outputs(github_output, {"environment": plan.environment, "action": plan.action})
-        if plan.action is Action.DOWN:
-            with stopwatch.stage("teardown"):
-                _run(down_commands(plan.environment, target), dry_run)
-            return
-        shas = _or_exit(_shas, services, plan, _or_exit(_parse_shas, sha_for or []), offline)
-        _deploy(plan, services, shas, target, options, stopwatch)
+        with _locked(plan.environment, target, lock, dry_run, stopwatch):
+            if plan.action is Action.DOWN:
+                with stopwatch.stage("teardown"):
+                    _run(down_commands(plan.environment, target), dry_run)
+                return
+            with stopwatch.stage("heads"):
+                known = _or_exit(_parse_shas, sha_for or [])
+                shas = _or_exit(_shas, services, plan, known, offline)
+            _deploy(plan, services, shas, target, options, stopwatch)
 
 
 @env_app.command()
@@ -474,6 +540,8 @@ def reset(
     chart: ChartOption = "charts/services",
     github_output: GitHubOutputOption = None,
     step_summary: StepSummaryOption = None,
+    lock_wait: LockWaitOption = DEFAULT_LOCK_WAIT_SECONDS,
+    lock_namespace: LockNamespaceOption = LOCK_NAMESPACE,
     dry_run: DryRun = False,
 ) -> None:
     """Return the preview environment to golden data and re-run its branch migrations."""
@@ -481,7 +549,12 @@ def reset(
     _or_exit(validate_environment_name, environment, services.names)
     report = Report(github_output, step_summary)
     target = Target(chart=chart, context=context)
-    with _timed("reset", report, environment) as stopwatch, stopwatch.stage("reset"):
+    lock = LockOptions(lock_namespace, lock_wait)
+    with (
+        _timed("reset", report, environment) as stopwatch,
+        _locked(environment, target, lock, dry_run, stopwatch),
+        stopwatch.stage("reset"),
+    ):
         _run(reset_commands(environment, target), dry_run)
 
 

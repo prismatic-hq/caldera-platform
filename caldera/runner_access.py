@@ -3,11 +3,13 @@
 from preview_cli.access import (
     DEPLOYER_NAMESPACE,
     DEPLOYER_SERVICE_ACCOUNT,
+    LOCK_NAMESPACE,
     NAMESPACE_ROLE,
     POD_SECURITY_LABEL,
 )
 
 DEPLOYER_ROLE = "preview-deployer"
+LOCK_ROLE = "preview-locks"
 SCOPE_POLICY = "preview-deployer-scope"
 RBAC_GROUP = "rbac.authorization.k8s.io"
 RUNNER_USERNAME = f"system:serviceaccount:{DEPLOYER_NAMESPACE}:{DEPLOYER_SERVICE_ACCOUNT}"
@@ -73,20 +75,46 @@ def namespace_admin_role() -> dict:
     )
 
 
+RUNNER_SUBJECTS = [
+    {"kind": "ServiceAccount", "name": DEPLOYER_SERVICE_ACCOUNT, "namespace": DEPLOYER_NAMESPACE}
+]
+
+
 def deployer_binding() -> dict:
     return {
         "apiVersion": f"{RBAC_GROUP}/v1",
         "kind": "ClusterRoleBinding",
         "metadata": {"name": DEPLOYER_ROLE},
         "roleRef": {"apiGroup": RBAC_GROUP, "kind": "ClusterRole", "name": DEPLOYER_ROLE},
-        "subjects": [
-            {
-                "kind": "ServiceAccount",
-                "name": DEPLOYER_SERVICE_ACCOUNT,
-                "namespace": DEPLOYER_NAMESPACE,
-            }
-        ],
+        "subjects": RUNNER_SUBJECTS,
     }
+
+
+def lock_access() -> list[dict]:
+    """Leases that serialize deploys of one preview environment across repositories."""
+    metadata = {"name": LOCK_ROLE, "namespace": LOCK_NAMESPACE}
+    return [
+        {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": LOCK_NAMESPACE}},
+        {
+            "apiVersion": f"{RBAC_GROUP}/v1",
+            "kind": "Role",
+            "metadata": metadata,
+            "rules": [
+                {
+                    "apiGroups": ["coordination.k8s.io"],
+                    "resources": ["leases"],
+                    "verbs": ["get", "create", "update", "delete"],
+                }
+            ],
+        },
+        {
+            "apiVersion": f"{RBAC_GROUP}/v1",
+            "kind": "RoleBinding",
+            "metadata": metadata,
+            "roleRef": {"apiGroup": RBAC_GROUP, "kind": "Role", "name": LOCK_ROLE},
+            "subjects": RUNNER_SUBJECTS,
+        },
+    ]
 
 
 def scope_policy() -> list[dict]:
@@ -181,4 +209,10 @@ def scope_policy() -> list[dict]:
 
 
 def manifests() -> list[dict]:
-    return [deployer_role(), deployer_binding(), namespace_admin_role(), *scope_policy()]
+    return [
+        deployer_role(),
+        deployer_binding(),
+        namespace_admin_role(),
+        *scope_policy(),
+        *lock_access(),
+    ]

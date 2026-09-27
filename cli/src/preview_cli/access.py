@@ -3,6 +3,7 @@ DEPLOYER_SERVICE_ACCOUNT = "arc-runner"
 NAMESPACE_ROLE = "preview-namespace-admin"
 ENVIRONMENT_KIND_LABEL = "prismatic.dev/environment-kind"
 POD_SECURITY_LABEL = "pod-security.kubernetes.io/enforce"
+LOCK_NAMESPACE = "caldera-locks"
 
 
 def namespace_manifests(environment: str) -> list[dict]:
