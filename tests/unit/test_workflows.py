@@ -76,7 +76,7 @@ def test_e2e_runs_only_against_the_pushed_image() -> None:
     e2e = next(step for step in steps("preview-environment.yml", "up") if step.get("id") == "e2e")
 
     assert e2e["run"] == 'uv run preview env test --name "$ENVIRONMENT"'
-    assert e2e["if"] == "steps.deploy.outputs.exact-image == 'true'"
+    assert e2e["if"] == "steps.deploy.outputs.exact-image == 'true' && !inputs.optimistic"
 
 
 def test_the_report_script_publishes_a_check_named_e2e() -> None:
@@ -96,7 +96,7 @@ def test_a_skipped_deploy_records_and_reports_nothing() -> None:
         if "report(" in step.get("with", {}).get("script", "")
     )
 
-    assert report["if"] == f"always() && {DEPLOYED}"
+    assert report["if"] == f"always() && {DEPLOYED} && !inputs.optimistic"
 
 
 def test_each_preview_deploy_is_a_github_deployment() -> None:

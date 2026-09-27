@@ -18,7 +18,7 @@ on:
         type: string
         default: main
       optimistic:
-        description: Deploy before the image build; the build-gated deploy then waits on the Lease instead of cancelling it
+        description: Deploy before the image build; never cancelled, and leaves e2e and reporting to the build-gated deploy
         type: boolean
         default: false
     secrets:
@@ -109,13 +109,13 @@ jobs:
             const { recordDeployment } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/preview-report.cjs`);
             await recordDeployment({ github, context });
       - id: e2e
-        if: steps.deploy.outputs.exact-image == 'true'
+        if: steps.deploy.outputs.exact-image == 'true' && !inputs.optimistic
         continue-on-error: true
         env:
           ENVIRONMENT: ${{ steps.deploy.outputs.environment }}
         run: uv run preview env test --name "$ENVIRONMENT"
       - name: Report e2e check, URLs and timings
-        if: always() && steps.deploy.outcome == 'success' && steps.deploy.outputs.skipped != 'true'
+        if: always() && steps.deploy.outcome == 'success' && steps.deploy.outputs.skipped != 'true' && !inputs.optimistic
         uses: actions/github-script@v9.0.0
         env:
           RESULT: ${{ steps.deploy.outputs.result }}

@@ -536,7 +536,33 @@ def test_test_dry_run_prints_the_helm_test_command() -> None:
     )
 
 
-def test_failed_command_exits_with_its_code(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_e2e_holds_the_environment_lock_so_no_deploy_overlaps_it(
+    leases, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = leases(MemoryLeases())
+    monkeypatch.setattr(
+        main.subprocess, "run", lambda command, **_: subprocess.CompletedProcess(command, 0, "", "")
+    )
+
+    code, output = invoke("env", "test", "--name", "quake-alerts")
+
+    assert code == 0, output
+    assert len(store.holders) == 1
+    assert store.leases == {}
+
+
+def test_e2e_waits_for_a_running_deploy_and_times_out_clearly(leases) -> None:
+    leases(MemoryLeases({"preview-quake-alerts": fresh_lease("prismatic-hq/steward-api/7")}))
+
+    code, output = invoke("env", "test", "--name", "quake-alerts", "--lock-wait", "0")
+
+    assert code == 2
+    assert "held by prismatic-hq/steward-api/7" in output
+
+
+def test_failed_command_exits_with_its_code(leases, monkeypatch: pytest.MonkeyPatch) -> None:
+    leases(MemoryLeases())
+
     def run(command: list[str], **kwargs: object) -> None:
         raise subprocess.CalledProcessError(3, command)
 
@@ -578,8 +604,10 @@ def test_up_publishes_stage_timings(aws, tmp_path: Path) -> None:
 
 
 def test_failed_e2e_still_publishes_its_timing(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    leases, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    store = leases(MemoryLeases())
+
     def run(command: list[str], **kwargs: object) -> None:
         raise subprocess.CalledProcessError(1, command)
 
@@ -594,6 +622,7 @@ def test_failed_e2e_still_publishes_its_timing(
 
     assert result.exit_code == 1
     assert "| e2e |" in step_summary.read_text()
+    assert store.leases == {}
 
 
 def test_resolve_fails_loudly_when_the_token_cannot_read_the_other_repo(

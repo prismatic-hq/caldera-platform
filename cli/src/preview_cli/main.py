@@ -574,11 +574,19 @@ def test_environment(
     context: ContextOption = None,
     github_output: GitHubOutputOption = None,
     step_summary: StepSummaryOption = None,
+    lock_wait: LockWaitOption = DEFAULT_LOCK_WAIT_SECONDS,
+    lock_namespace: LockNamespaceOption = LOCK_NAMESPACE,
     dry_run: DryRun = False,
 ) -> None:
     """Run the preview environment's E2E suite (Helm test hooks) and stream its logs."""
     services = _or_exit(ServiceRegistry.load, services_file)
     _or_exit(validate_environment_name, environment, services.names)
     report = Report(github_output, step_summary)
-    with _timed("test", report, environment) as stopwatch, stopwatch.stage("e2e"):
-        _run(helm_test_commands(environment, Target(context=context)), dry_run)
+    target = Target(context=context)
+    lock = LockOptions(lock_namespace, lock_wait)
+    with (
+        _timed("test", report, environment) as stopwatch,
+        _locked(environment, target, lock, dry_run, stopwatch),
+        stopwatch.stage("e2e"),
+    ):
+        _run(helm_test_commands(environment, target), dry_run)
