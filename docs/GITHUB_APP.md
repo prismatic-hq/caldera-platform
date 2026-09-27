@@ -49,13 +49,34 @@ mise run secrets:put -- --app-id <app-id> --installation-id <installation-id> \
 After the command succeeds, delete the `.pem` or move it to a password manager. Never paste the
 key into chat, tickets or commits.
 
+## Keep the app in 1Password
+
+Store the app as one item in the `Prismatic` vault, named `prismatic-hq GitHub App`, with these
+field names so the tasks can read it:
+
+| Field | Value |
+|---|---|
+| `app_id` | App ID |
+| `client_id` | Client ID (`Iv23...`) |
+| `installation_id` | Installation ID |
+| `pem` | The `.pem` private key, attached as a file named `pem` |
+
 ## Store the workflow secrets
 
-Add two organization secrets under **Org Settings -> Secrets and variables -> Actions**, with
-repository access for `caldera-platform`, `tremor-api` and `steward-api`:
+Private repositories on the GitHub Free plan cannot read organization secrets or variables, so
+each repo gets its own copy. Enable the 1Password desktop app CLI integration first
+([DEVELOPMENT.md](DEVELOPMENT.md#1password-cli)), then run this once, and again after rotating
+the key:
 
-- `CALDERA_APP_CLIENT_ID`: the **Client ID**
-- `CALDERA_APP_PRIVATE_KEY`: the full contents of the `.pem`
+```sh
+mise run secrets:github -- --region us-east-2
+```
+
+It reads `client_id` and `pem` with `op read` and sets the `CALDERA_APP_CLIENT_ID` and
+`CALDERA_APP_PRIVATE_KEY` secrets and the `AWS_REGION` variable on `caldera-platform` and every
+repo in `services.yaml`. `--region` defaults to `AWS_REGION`. Values go to `gh` on stdin, never on
+the command line or in output. You need admin access to each repo. `--op-vault` and `--op-item`
+select another item; `--client-id` and `--private-key-file` bypass 1Password.
 
 Each job mints a one-hour, contents-read installation token with
 `actions/create-github-app-token`.
@@ -63,5 +84,6 @@ Each job mints a one-hour, contents-read installation token with
 ## Rotate the key
 
 1. Generate a new private key on the app page.
-2. Run `mise run secrets:put` with the new `.pem` and update `CALDERA_APP_PRIVATE_KEY`.
+2. Replace the `pem` file on the 1Password item, then run `mise run secrets:put` with the new
+   `.pem` and `mise run secrets:github -- --region us-east-2`.
 3. Delete the old key on the app page.
