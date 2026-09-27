@@ -30,6 +30,7 @@ def cilium_operator_statements(
             "ec2:DescribeInstances",
             "ec2:DescribeInstanceTypes",
             "ec2:DescribeNetworkInterfaces",
+            "ec2:DescribeRouteTables",
             "ec2:DescribeSecurityGroups",
             "ec2:DescribeSubnets",
             "ec2:DescribeTags",
