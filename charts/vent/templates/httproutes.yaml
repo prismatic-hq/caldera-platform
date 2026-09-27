@@ -1,4 +1,4 @@
-{{- $vent := include "vent.name" . }}
+{{- $vent := include "preview.name" . }}
 {{- range $name, $overrides := .Values.services }}
 {{- $service := mustMergeOverwrite (deepCopy $.Values.serviceDefaults) $overrides }}
 ---
@@ -8,8 +8,8 @@ metadata:
   name: {{ $name }}
   namespace: {{ $.Release.Namespace }}
   labels:
-    {{- include "vent.labels" $ | nindent 4 }}
-    {{- include "vent.selectorLabels" (dict "name" $name) | nindent 4 }}
+    {{- include "preview.labels" $ | nindent 4 }}
+    {{- include "preview.selectorLabels" (dict "name" $name) | nindent 4 }}
     prismatic.dev/exposure: preview
 spec:
   parentRefs:
