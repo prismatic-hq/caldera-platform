@@ -13,7 +13,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from caldera.config import SERVICES_FILE
+from cdk.config import SERVICES_FILE
 from preview_cli.registry import ServiceRegistry
 from scripts.onepassword import OP_ITEM, OP_VAULT, OpError, op_reference, read_op
 

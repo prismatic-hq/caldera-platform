@@ -2,8 +2,8 @@ import time
 
 import pytest
 
-from caldera import runner_access
-from caldera.runner_access import RUNNER_USERNAME
+from cdk import runner_access
+from cdk.runner_access import RUNNER_USERNAME
 from preview_cli.access import (
     DEPLOYER_NAMESPACE,
     DEPLOYER_SERVICE_ACCOUNT,

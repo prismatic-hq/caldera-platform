@@ -4,7 +4,7 @@ import boto3
 import pytest
 from botocore.stub import Stubber
 
-from caldera.stacks.ci_access import push_role_output
+from cdk.stacks.ci_access import push_role_output
 from scripts.put_role_arns import main, role_arn_settings
 
 STACK = "CalderaCiAccess"

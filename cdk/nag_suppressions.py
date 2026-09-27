@@ -17,7 +17,7 @@ from aws_cdk import Acknowledgment, CfnResource, Stack, Validations
 from aws_cdk import aws_iam as iam
 from constructs import IConstruct
 
-from caldera.constructs.cleanup import (
+from cdk.constructs.cleanup import (
     DENY_FUNCTION_CODE,
     LAMBDA_VPC_ACCESS_ACTIONS,
     LAMBDA_VPC_DOCS,

@@ -6,21 +6,21 @@ from aws_cdk import aws_eks_v2 as eks
 from aws_cdk import aws_iam as iam
 from constructs import Construct, IConstruct
 
-from caldera import charts, runner_access
-from caldera.config import (
+from cdk import charts, runner_access
+from cdk.config import (
     GITHUB_APP_KEYS,
     REPO_ROOT,
     SSM_PREFIX,
     PlatformConfig,
     github_app_parameter,
 )
-from caldera.constructs.cleanup import CleanupNetwork, CleanupProps, CleanupResource, vpc_arn
-from caldera.constructs.pod_identity import pod_identity_role
-from caldera.policies import load_balancer_controller_statements
-from caldera.stacks.ci_access import RUNNER_NAMESPACE, RUNNER_SERVICE_ACCOUNT
-from caldera.stacks.cluster import ClusterStack
-from caldera.stacks.dns import DnsStack
-from caldera.stacks.network import NetworkStack
+from cdk.constructs.cleanup import CleanupNetwork, CleanupProps, CleanupResource, vpc_arn
+from cdk.constructs.pod_identity import pod_identity_role
+from cdk.policies import load_balancer_controller_statements
+from cdk.stacks.ci_access import RUNNER_NAMESPACE, RUNNER_SERVICE_ACCOUNT
+from cdk.stacks.cluster import ClusterStack
+from cdk.stacks.dns import DnsStack
+from cdk.stacks.network import NetworkStack
 
 PLATFORM_MANIFESTS = REPO_ROOT / "platform"
 GATEWAY_NAMESPACE = charts.ENVOY_GATEWAY.namespace

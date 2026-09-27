@@ -1,7 +1,7 @@
 import pytest
 
-from caldera.runner_access import DEPLOYER_ROLE, manifests
-from caldera.stacks.ci_access import RUNNER_NAMESPACE, RUNNER_SERVICE_ACCOUNT
+from cdk.runner_access import DEPLOYER_ROLE, manifests
+from cdk.stacks.ci_access import RUNNER_NAMESPACE, RUNNER_SERVICE_ACCOUNT
 from preview_cli.access import (
     DEPLOYER_NAMESPACE,
     DEPLOYER_SERVICE_ACCOUNT,

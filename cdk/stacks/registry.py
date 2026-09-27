@@ -2,7 +2,7 @@ from aws_cdk import Duration, RemovalPolicy, Stack
 from aws_cdk import aws_ecr as ecr
 from constructs import Construct
 
-from caldera.config import PlatformConfig
+from cdk.config import PlatformConfig
 
 GOLDEN_DB = "golden-db"
 E2E = "e2e"

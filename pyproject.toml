@@ -47,7 +47,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.ruff.lint.isort]
 known-first-party = [
-    "caldera",
+    "cdk",
     "preview_cli",
     "golden_seeder",
     "cfn",
@@ -59,4 +59,4 @@ known-first-party = [
 [tool.pytest.ini_options]
 testpaths = ["tests", "cli/tests", "seeder/tests", "e2e"]
 addopts = "-ra --import-mode=importlib"
-pythonpath = [".", "caldera/handlers"]
+pythonpath = [".", "cdk/handlers"]

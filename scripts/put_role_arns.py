@@ -11,8 +11,8 @@ import sys
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-from caldera.config import SERVICES_FILE
-from caldera.stacks.ci_access import push_role_output
+from cdk.config import SERVICES_FILE
+from cdk.stacks.ci_access import push_role_output
 from preview_cli.registry import ServiceRegistry
 from scripts.put_github_secrets import GitHubSetting, put_github_settings, run_gh
 

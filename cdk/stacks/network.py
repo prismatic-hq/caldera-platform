@@ -5,8 +5,8 @@ from aws_cdk import aws_iam as iam
 from aws_cdk import aws_logs as logs
 from constructs import Construct
 
-from caldera.config import SSM_PREFIX, PlatformConfig
-from caldera.constructs.cleanup import CleanupProps, CleanupResource, owned_log_group, vpc_arn
+from cdk.config import SSM_PREFIX, PlatformConfig
+from cdk.constructs.cleanup import CleanupProps, CleanupResource, owned_log_group, vpc_arn
 
 VPC_CIDR = "10.40.0.0/16"
 INTERFACE_ENDPOINTS = {

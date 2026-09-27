@@ -3,13 +3,13 @@ import os
 import aws_cdk as cdk
 from aws_cdk import Stack, Tags
 
-from caldera.config import PLATFORM_TAG, PlatformConfig
-from caldera.stacks.addons import AddonsStack
-from caldera.stacks.ci_access import CiAccessStack
-from caldera.stacks.cluster import ClusterStack
-from caldera.stacks.dns import DnsStack
-from caldera.stacks.network import NetworkStack
-from caldera.stacks.registry import RegistryStack
+from cdk.config import PLATFORM_TAG, PlatformConfig
+from cdk.stacks.addons import AddonsStack
+from cdk.stacks.ci_access import CiAccessStack
+from cdk.stacks.cluster import ClusterStack
+from cdk.stacks.dns import DnsStack
+from cdk.stacks.network import NetworkStack
+from cdk.stacks.registry import RegistryStack
 
 DEPENDENCIES: dict[str, list[str]] = {
     "Cluster": ["Network"],

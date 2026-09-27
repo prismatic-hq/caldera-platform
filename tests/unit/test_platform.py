@@ -1,4 +1,4 @@
-from caldera.platform import build_platform
+from cdk.platform import build_platform
 
 EXPECTED_STACKS = [
     "CalderaNetwork",

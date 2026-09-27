@@ -2,8 +2,8 @@
 import aws_cdk as cdk
 from cdk_nag import AwsSolutionsChecks
 
-from caldera.nag_suppressions import apply_suppressions
-from caldera.platform import build_platform
+from cdk.nag_suppressions import apply_suppressions
+from cdk.platform import build_platform
 
 
 def build(app: cdk.App) -> cdk.App:
