@@ -1,30 +1,29 @@
 import aws_cdk as cdk
 
-from caldera_platform.platform import build_platform
+from caldera.platform import build_platform
 
 EXPECTED_STACKS = [
     "CalderaNetwork",
     "CalderaCluster",
-    "CalderaData",
-    "CalderaDns",
     "CalderaRegistry",
+    "CalderaDns",
     "CalderaCiAccess",
-    "CalderaAddonIdentity",
-    "CalderaGitOpsBridge",
+    "CalderaAddons",
 ]
 
 
-def test_platform_defines_all_stacks_in_bridge_order() -> None:
+def test_platform_defines_exactly_the_eks_design_stacks() -> None:
     stacks = build_platform(cdk.App())
 
-    assert [stack.stack_name for stack in stacks] == EXPECTED_STACKS
+    assert [stack.stack_name for stack in stacks.values()] == EXPECTED_STACKS
 
 
-def test_each_stack_depends_on_the_previous_one() -> None:
+def test_stack_dependencies_follow_the_deploy_order() -> None:
     stacks = build_platform(cdk.App())
 
-    for previous, current in zip(stacks, stacks[1:], strict=False):
-        assert previous in current.dependencies
+    assert stacks["Network"] in stacks["Cluster"].dependencies
+    assert {stacks["Cluster"], stacks["Dns"]} <= set(stacks["Addons"].dependencies)
+    assert {stacks["Cluster"], stacks["Registry"]} <= set(stacks["CiAccess"].dependencies)
 
 
 def test_platform_synthesizes() -> None:
