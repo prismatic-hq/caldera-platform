@@ -35,3 +35,15 @@ def test_preview_jobs_never_run_for_pull_requests(workflow: str) -> None:
 @pytest.mark.parametrize("workflow", PREVIEW_WORKFLOWS)
 def test_preview_workflows_deploy_for_real(workflow: str) -> None:
     assert "--dry-run" not in (WORKFLOWS / workflow).read_text()
+
+
+@pytest.mark.parametrize("workflow", (*PREVIEW_WORKFLOWS, "golden-image.yml"))
+def test_cross_repo_checkouts_use_a_github_app_installation_token(workflow: str) -> None:
+    for name, job in jobs(workflow).items():
+        steps = job["steps"]
+        token_steps = [i for i, step in enumerate(steps) if step.get("id") == "app-token"]
+        for i, step in enumerate(steps):
+            if step.get("with", {}).get("repository"):
+                assert token_steps and token_steps[0] < i, f"{workflow}:{name}"
+                assert step["with"]["token"] == "${{ steps.app-token.outputs.token }}"
+    assert "CALDERA_TOKEN" not in (WORKFLOWS / workflow).read_text()

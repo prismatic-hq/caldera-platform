@@ -33,18 +33,26 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      - id: app-token
+        uses: actions/create-github-app-token@v3.2.0
+        with:
+          client-id: ${{ secrets.CALDERA_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CALDERA_APP_PRIVATE_KEY }}
+          owner: prismatic-hq
+          repositories: tremor-api,steward-api
+          permission-contents: read
       - uses: actions/checkout@v7
         with:
           repository: prismatic-hq/tremor-api
           ref: main
           path: ${{ env.SERVICES_DIR }}/tremor-api
-          token: ${{ secrets.CALDERA_TOKEN || github.token }}
+          token: ${{ steps.app-token.outputs.token }}
       - uses: actions/checkout@v7
         with:
           repository: prismatic-hq/steward-api
           ref: main
           path: ${{ env.SERVICES_DIR }}/steward-api
-          token: ${{ secrets.CALDERA_TOKEN || github.token }}
+          token: ${{ steps.app-token.outputs.token }}
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
