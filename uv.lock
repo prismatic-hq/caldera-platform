@@ -120,6 +120,7 @@ dependencies = [
     { name = "caldera-cli" },
     { name = "cdk-nag" },
     { name = "constructs" },
+    { name = "golden-seeder" },
 ]
 
 [package.dev-dependencies]
@@ -136,6 +137,7 @@ requires-dist = [
     { name = "caldera-cli", editable = "cli" },
     { name = "cdk-nag", specifier = ">=3.0.2,<4" },
     { name = "constructs", specifier = ">=10.5.0,<11.0.0" },
+    { name = "golden-seeder", editable = "seeder" },
 ]
 
 [package.metadata.requires-dev]
@@ -302,16 +304,6 @@ wheels = [
 name = "golden-seeder"
 version = "0.1.0"
 source = { editable = "seeder" }
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.4" }]
 
 [[package]]
 name = "h11"
