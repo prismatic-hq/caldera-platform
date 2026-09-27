@@ -6,6 +6,7 @@ import aws_cdk as cdk
 import pytest
 
 CDK_JSON = Path(__file__).resolve().parents[2] / "cdk.json"
+TEST_DOMAIN = "example.com"
 
 AppFactory = Callable[..., cdk.App]
 
@@ -23,6 +24,6 @@ def new_app() -> AppFactory:
     flags = json.loads(CDK_JSON.read_text())["context"]
 
     def factory(context: dict | None = None, **kwargs: object) -> cdk.App:
-        return cdk.App(context={**flags, **(context or {})}, **kwargs)
+        return cdk.App(context={**flags, "domain": TEST_DOMAIN, **(context or {})}, **kwargs)
 
     return factory

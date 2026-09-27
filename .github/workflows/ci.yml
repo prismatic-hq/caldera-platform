@@ -51,7 +51,7 @@ jobs:
         with:
           node-version: 24
       - run: uv sync --locked
-      - run: npx --yes aws-cdk@2 synth --quiet
+      - run: npx --yes aws-cdk@2 synth --quiet -c env=sandbox.yaml
       - name: cdk-nag suppression count
         run: |
           jq -rs '[.[].Resources[]? | .Metadata.cdk_nag.rules_to_suppress[]?
