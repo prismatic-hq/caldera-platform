@@ -1,9 +1,11 @@
 import json
+from itertools import combinations
 
 import pytest
 from aws_cdk.assertions import Match, Template
 
 from caldera.platform import build_platform
+from caldera.stacks.addons import KUBECTL_CONCURRENCY
 
 LATEST_RUNTIMES = {"python3.14", "nodejs24.x"}
 
@@ -575,3 +577,42 @@ def test_cilium_operator_can_describe_everything_eni_ipam_reads(templates) -> No
         )
     }
     assert granted >= CILIUM_ENI_DESCRIBE_ACTIONS, CILIUM_ENI_DESCRIBE_ACTIONS - granted
+
+
+KUBECTL_RESOURCE_TYPES = ("Custom::AWSCDK-EKS-HelmChart", "Custom::AWSCDK-EKS-KubernetesResource")
+
+
+def transitive_dependencies(template: Template) -> dict[str, set[str]]:
+    direct = {
+        logical_id: set(resource.get("DependsOn", []))
+        for logical_id, resource in template.to_json()["Resources"].items()
+    }
+
+    def reach(logical_id: str, seen: set[str]) -> set[str]:
+        for dependency in direct.get(logical_id, set()) - seen:
+            seen.add(dependency)
+            reach(dependency, seen)
+        return seen
+
+    return {logical_id: reach(logical_id, set()) for logical_id in direct}
+
+
+def test_addons_run_at_most_three_kubectl_resources_at_once(templates) -> None:
+    addons = templates["Addons"]
+    kubectl = sorted(
+        logical_id
+        for resource_type in KUBECTL_RESOURCE_TYPES
+        for logical_id in resources(addons, resource_type)
+    )
+    reachable = transitive_dependencies(addons)
+
+    def ordered(a: str, b: str) -> bool:
+        return a in reachable[b] or b in reachable[a]
+
+    assert KUBECTL_CONCURRENCY == 3
+    concurrent = [
+        group
+        for group in combinations(kubectl, KUBECTL_CONCURRENCY + 1)
+        if not any(ordered(a, b) for a, b in combinations(group, 2))
+    ]
+    assert not concurrent, concurrent[0]
