@@ -80,6 +80,22 @@ wheels = [
 ]
 
 [[package]]
+name = "aws-cdk-lambda-layer-kubectl-v35"
+version = "2.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aws-cdk-lib" },
+    { name = "constructs" },
+    { name = "jsii" },
+    { name = "publication" },
+    { name = "typeguard" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cd/ef/737cb2c5263a864406be77855e584ac326208b313b59a7f776b21e7db152/aws_cdk_lambda_layer_kubectl_v35-2.2.2.tar.gz", hash = "sha256:fa58c4f0c4135581b2e6d4cbb3a128a857e248ff1354cec44877b13c4b8f7cb8", size = 36596282, upload-time = "2026-05-13T10:27:50.435Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/46/6d/00b292c72d1ee9b4a1aa390e6d99ab39aa1f8a0fb9345dde949185225915/aws_cdk_lambda_layer_kubectl_v35-2.2.2-py3-none-any.whl", hash = "sha256:af51268333bbd18590b8b892a002011e6fbe9f41944149bd57cada21f9789921", size = 36595676, upload-time = "2026-05-13T10:27:45.458Z" },
+]
+
+[[package]]
 name = "aws-cdk-lib"
 version = "2.271.0"
 source = { registry = "https://pypi.org/simple" }
@@ -129,6 +145,7 @@ name = "caldera-platform"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "aws-cdk-lambda-layer-kubectl-v35" },
     { name = "aws-cdk-lib" },
     { name = "boto3" },
     { name = "cdk-nag" },
@@ -149,6 +166,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aws-cdk-lambda-layer-kubectl-v35", specifier = ">=2.2.2,<3" },
     { name = "aws-cdk-lib", specifier = ">=2.270.0,<3.0.0" },
     { name = "boto3", specifier = ">=1.43" },
     { name = "cdk-nag", specifier = ">=3.0.2,<4" },
