@@ -112,3 +112,34 @@ def test_cleanup_waits_for_load_balancers_before_deleting_security_groups(stubbe
     )
 
     assert left == [f"load balancer {NLB}"]
+
+
+def test_deletes_every_security_group_except_default_and_cloudformation_managed(stubbed) -> None:
+    ec2, stub = stubbed["ec2"]
+    stub.add_response(
+        "describe_security_groups",
+        {
+            "SecurityGroups": [
+                {"GroupId": "sg-default", "GroupName": "default"},
+                {
+                    "GroupId": "sg-stack",
+                    "GroupName": "endpoints",
+                    "Tags": [{"Key": "aws:cloudformation:stack-name", "Value": "CalderaNetwork"}],
+                },
+                {"GroupId": "sg-cluster", "GroupName": "node", "Tags": CLUSTER_TAG},
+                {"GroupId": "sg-manual", "GroupName": "probe"},
+            ]
+        },
+        {"Filters": ANY},
+    )
+    stub.add_response("delete_security_group", {}, {"GroupId": "sg-cluster"})
+    stub.add_client_error(
+        "delete_security_group",
+        service_error_code="DependencyViolation",
+        expected_params={"GroupId": "sg-manual"},
+    )
+
+    left = network_sweeper.sweep_security_groups(ec2, VPC)
+
+    assert left == ["security group sg-manual (DependencyViolation)"]
+    stub.assert_no_pending_responses()

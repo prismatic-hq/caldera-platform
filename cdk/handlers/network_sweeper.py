@@ -1,4 +1,4 @@
-"""Deletes AWS resources that in-cluster controllers left in the VPC, before the VPC is deleted."""
+"""Deletes AWS resources created outside CloudFormation in the VPC, before the VPC is deleted."""
 
 from typing import Any
 
@@ -88,13 +88,17 @@ def sweep_launch_templates(ec2: Any, cluster: str) -> list[str]:
     return []
 
 
-def sweep_security_groups(ec2: Any, vpc_id: str, cluster: str) -> list[str]:
+def _stack_managed(tags: list[dict]) -> bool:
+    return any(tag["Key"] == "aws:cloudformation:stack-name" for tag in tags)
+
+
+def sweep_security_groups(ec2: Any, vpc_id: str) -> list[str]:
     filters = [{"Name": "vpc-id", "Values": [vpc_id]}]
     groups = [
         group
         for page in ec2.get_paginator("describe_security_groups").paginate(Filters=filters)
         for group in page["SecurityGroups"]
-        if _cluster_tagged(group.get("Tags", []), cluster)
+        if group["GroupName"] != "default" and not _stack_managed(group.get("Tags", []))
     ]
     failures = [
         _try_delete(
@@ -142,7 +146,7 @@ def cleanup(properties: dict[str, Any], clients: dict[str, Any] | None = None) -
     left += sweep_instances(ec2, vpc_id, cluster)
     left += sweep_launch_templates(ec2, cluster)
     if not left:
-        left += sweep_security_groups(ec2, vpc_id, cluster)
+        left += sweep_security_groups(ec2, vpc_id)
         left += sweep_network_interfaces(ec2, vpc_id)
     left += sweep_parameters(clients["ssm"], properties["ParameterPrefix"])
     return left
